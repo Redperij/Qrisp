@@ -17,7 +17,7 @@
 """
 
 import numpy as np
-from qrisp import QuantumVariable, x, dicke_state, cx, multi_measurement
+from qrisp import QuantumVariable, x, dicke_state, cx, multi_measurement, prepare
 
 def test_dicke_state_balanced():
     expected = QuantumVariable(3)
@@ -45,6 +45,14 @@ def test_dicke_state_unbalanced():
     }, method="qswitch")
 
     qv = QuantumVariable(3)
+
+    prep_vec = np.zeros(8, dtype=complex)
+    prep_vec[1] = 0.25
+    prep_vec[2] = 0.375
+    prep_vec[4] = 0.375
+
+    prepare(qv, prep_vec, reversed=True, method="qswitch")
+
     # Variable, num of |1> qubits, coefficients distribution for unbalanced
     #dicke_state(qv, 1, coeffs) # Just make an unbalanced modification to the existing
     # dicke state preparation routine. If possible, of course.
