@@ -29,11 +29,12 @@ def test_dicke_state_balanced():
     }, method="qswitch")
 
     qv = QuantumVariable(3)
-    x(qv[2])
+    x(qv[0])
+    print(f"Input: {qv}")
     dicke_state(qv, 1)
 
     print(f"Prepared: {qv}")
-    print(f"Against: {expected}")
+    print(f"Expected: {expected}")
     assert qv.get_measurement() == expected.get_measurement()
 
 def test_dicke_state_unbalanced():
@@ -59,7 +60,7 @@ def test_dicke_state_unbalanced():
     # Otherwise implement it under the same function as switch.
 
     print(f"Prepared: {qv}")
-    print(f"Against: {expected}")
+    print(f"Expected: {expected}")
     assert qv.get_measurement() == expected.get_measurement()
 
 def test_dicke_state_2NN():
@@ -72,8 +73,14 @@ def test_dicke_state_2NN():
     # Variable, num of |1> qubits, coefficients distribution for unbalanced, Should qubits be NNs.
     #dicke_state(qv, 2, coeffs, true) # Allow unbalanced as well?
 
+    prep_vec = np.zeros(8, dtype=complex)
+    prep_vec[3] = 0.5
+    prep_vec[6] = 0.5
+
+    prepare(qv, prep_vec, reversed=True, method="qswitch")
+
     print(f"Prepared: {qv}")
-    print(f"Against: {expected}")
+    print(f"Expected: {expected}")
     assert qv.get_measurement() == expected.get_measurement()
 
 def test_dicke_state_balanced_double():
@@ -103,7 +110,7 @@ def test_dicke_state_balanced_double():
     #dicke_state_double(qv, 1)
 
     print(f"Prepared: {prep}")
-    print(f"Against: {expected}")
+    print(f"Expected: {expected}")
     assert prep == expected.get_measurement()
 
 def test_dicke_state_unbalanced_double():
@@ -122,16 +129,20 @@ def test_dicke_state_unbalanced_double():
     #x(qv1[2])
     # Variable, num of |1> qubits, coefficients distribution for unbalanced
     #dicke_state_double(qv, 1, coeffs)
+    prep_vec = np.zeros(8, dtype=complex)
+    prep_vec[1] = 0.25
+    prep_vec[2] = 0.375
+    prep_vec[4] = 0.375
+    prepare(qv1, prep_vec, reversed=True, method="qswitch")
 
     cx(qv1, qv2)
-
     prep = {
         "".join(bits): p
         for bits, p in multi_measurement([qv1, qv2]).items()
     }
 
     print(f"Prepared: {prep}")
-    print(f"Against: {expected}")
+    print(f"Expected: {expected}")
     assert prep == expected.get_measurement()
 
 def test_dicke_state_double_2NN():
@@ -145,17 +156,21 @@ def test_dicke_state_double_2NN():
     # Want to prepare it on a single variable.
     qv1 = QuantumVariable(3)
     qv2 = QuantumVariable(3)
-    x(qv1[2])
+    #x(qv1[2])
     # Variable, num of |1> qubits, coefficients distribution for unbalanced, Should qubits be NNs.
     #dicke_state_double(qv, 2, true)
 
-    cx(qv1, qv2)
+    prep_vec = np.zeros(8, dtype=complex)
+    prep_vec[3] = 0.5
+    prep_vec[6] = 0.5
+    prepare(qv1, prep_vec, reversed=True, method="qswitch")
 
+    cx(qv1, qv2)
     prep = {
         "".join(bits): p
         for bits, p in multi_measurement([qv1, qv2]).items()
     }
 
     print(f"Prepared: {prep}")
-    print(f"Against: {expected}")
+    print(f"Expected: {expected}")
     assert prep == expected.get_measurement()
