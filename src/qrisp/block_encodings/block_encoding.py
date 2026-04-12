@@ -524,6 +524,45 @@ class BlockEncoding:
             is_hermitian=is_hermitian,
         )
 
+    @classmethod
+    def from_foqcs_lcu_prep(
+        cls: "BlockEncoding",
+        prep: QuantumVariable,
+        num_ops: int = 1,
+    ) -> BlockEncoding:
+        r"""
+        Constructs a BlockEncoding using the Fast One-Qubit-Controlled Select Linear Combination of Unitaries (FOQCS-LCU) protocol.
+
+        Parameters
+        ----------
+        prep : QuantumVariable
+            Prepared ancillas by one of the FOQCS preparation routines.
+        num_ops : int
+            The number of operand quantum variables. The default is 1.
+
+        Returns
+        -------
+        BlockEncoding
+            A BlockEncoding using FOQCS LCU.
+
+        Raises
+        ------
+        ValueError
+            ?
+
+        Notes
+        -----
+        - ?
+
+        Examples
+        --------
+
+        ::
+
+
+        """
+        raise NotImplementedError
+
     #
     # Utilities
     #

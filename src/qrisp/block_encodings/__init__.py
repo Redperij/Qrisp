@@ -17,3 +17,4 @@
 """
 
 from qrisp.block_encodings.block_encoding import *
+from qrisp.block_encodings.foqcs_preps import *
