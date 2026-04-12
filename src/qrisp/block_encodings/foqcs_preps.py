@@ -57,3 +57,8 @@ def cx_ladder(qv):
     n = len(qv)
     for i in reversed(range(0, n - 1)):
         cx(qv[i], qv[i + 1])
+
+def ecx(qv, split_index):
+    
+    n =  len(qv)
+    cx(qv[:split_index], qv[split_index:])
