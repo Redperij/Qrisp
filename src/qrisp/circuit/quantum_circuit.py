@@ -1209,8 +1209,7 @@ class QuantumCircuit:
         Parameters
         ----------
         formatted : bool, optional
-            Accepted for backward compatibility with the previous Qrisp API but
-            has no effect. The default is False.
+            Return formatted Qasm string. The default is False.
 
         filename : str, optional
             If provided, the QASM string is also written to this file path.
@@ -1244,32 +1243,28 @@ class QuantumCircuit:
 
         qiskit_qc = self.to_qiskit()
         try:
-            qasm_str = dumps_qasm2(qiskit_qc)
-        except (QASM2ExportError, TypeError):
-
-            transpiled_qiskit_qc = qiskit_transpile(
-                qiskit_qc,
-                basis_gates=[
-                    "x",
-                    "y",
-                    "z",
-                    "h",
-                    "s",
-                    "t",
-                    "s_dg",
-                    "t_dg",
-                    "cx",
-                    "cz",
-                    "rz",
-                ],
-            )
-            qasm_str = dumps_qasm2(transpiled_qiskit_qc)
-
-        if filename is not None:
-            with open(filename, "w", encoding=encoding) as f:
-                f.write(qasm_str)
-
-        return qasm_str
+            return qiskit_qc.qasm(formatted, filename, encoding)
+        except:
+            try:
+                return dumps_qasm2(qiskit_qc)
+            except (QASM2ExportError, TypeError):
+                transpiled_qiskit_qc = qiskit_transpile(
+                    qiskit_qc,
+                    basis_gates=[
+                        "x",
+                        "y",
+                        "z",
+                        "h",
+                        "s",
+                        "t",
+                        "s_dg",
+                        "t_dg",
+                        "cx",
+                        "cz",
+                        "rz",
+                    ],
+                )
+                return dumps_qasm2(transpiled_qiskit_qc)
 
     def to_qasm3(
         self,
