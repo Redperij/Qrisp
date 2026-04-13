@@ -53,10 +53,14 @@ def dicke1_state(qv, coeffs=None, nn=False):
     # -> NOT (n - 1)^th qubit -> calc theta for coeffs except last? -> put in gamma gate ladder -> put in the phase gates -> call CNOT ladder from top to bottom from last qubit to first
     pass
 
-def cx_ladder(qv):
+def cx_ladder(qv, k = 1):
+    """
+    TODO: DOC
+    len - how many qubits to drag the control over. (1: neighbour, 2: 1 qubit over the neighbour, etc.)
+    """
     n = len(qv)
-    for i in reversed(range(0, n - 1)):
-        cx(qv[i], qv[i + 1])
+    for i in reversed(range(0, n - k)):
+        cx(qv[i], qv[i + k])
 
 def ecx(qv, split_index):
     
