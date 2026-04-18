@@ -1,6 +1,6 @@
 """
 ********************************************************************************
-* Copyright (c) 2024 the Qrisp authors
+* Copyright (c) 2026 the Qrisp authors
 *
 * This program and the accompanying materials are made available under the
 * terms of the Eclipse Public License 2.0 which is available at
@@ -17,3 +17,4 @@
 """
 
 from qrisp.block_encodings.block_encoding import *
+from qrisp.block_encodings.block_encoding_methods import *

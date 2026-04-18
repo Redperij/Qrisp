@@ -17,9 +17,10 @@
 """
 
 import numpy as np
-from qrisp import QuantumVariable, x, xxyy, p
+from qrisp import QuantumVariable, Qubit, x, xxyy, p
+from collections.abc import Sequence
 
-def unbalanced_W_state(qv, amplitudes):
+def unbalanced_W_state(qv: QuantumVariable | Sequence[Qubit], amplitudes: list[float]):
     r"""
     Prepare the generalized W state
 
