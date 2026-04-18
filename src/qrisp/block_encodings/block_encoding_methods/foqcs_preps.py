@@ -25,8 +25,8 @@ def foqcs_prep_heisenberg_1D(
     coeffs: npt.NDArray[np.number],
     unitaries: list[Callable[..., Any]],
 ) -> QuantumVariable:
-  
-  raise NotImplementedError
+    
+    raise NotImplementedError
 
 
 ###################################

@@ -16,4 +16,4 @@
 ********************************************************************************
 """
 
-from qrisp.block_encodings.block_encoding import *
+from qrisp.block_encodings.block_encoding_methods.foqcs_preps import *
