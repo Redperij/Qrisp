@@ -18,11 +18,9 @@
 
 import numpy as np
 from qrisp.block_encodings import BlockEncoding
-
-import numpy as np
-from qrisp.block_encodings import BlockEncoding
 from qrisp import QuantumVariable
 from qrisp.block_encodings import foqcs_prep_heisenberg_1D
+from qiskit.quantum_info import Statevector
 
 def test_block_encoding_from_foqcs_lcu_prep():
     """
@@ -42,12 +40,28 @@ def test_block_encoding_from_foqcs_lcu_prep():
     heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
     heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
 
+########### TESTING ###############
+    # Modify the values the way prep does, as it's not part of the prep in FOQCS-LCU qiskit code.
+    g[0] = np.sqrt(g[0] * L)
+    g[1] = np.sqrt(g[1] * L * -1j)
+    g[2] = np.sqrt(g[2] * L)
+    J[0] = np.sqrt(J[0] * (L - 1))
+    J[1] = np.sqrt(J[1] * -(L - 1))
+    J[2] = np.sqrt(J[2] * (L - 1))
+
+    norm = np.linalg.norm(np.block([g, J]))
+    g /= norm
+    J /= norm
+########### TESTING ###############
 
     # Prep base state using qv + Do FOQCS-LCU magic using Daniil's function
-    state = foqcs_prep_heisenberg_1D(L, heis_g, heis_J)
-    sv = state.qs.statevector("function")
+    d_state = foqcs_prep_heisenberg_1D(L, heis_g, heis_J)
+    sv = d_state.qs.statevector("function")
+    qc = d_state.qs.compile()
+    qc = qc.to_qiskit()
+    state = Statevector.from_instruction(qc.reverse_bits())
 
-    # Reverse bit order (why?) + Simulate resulting quantum state
+    # Reverse bit order + Simulate resulting quantum state
     # var_prep[:].reverse()
 
     # Build Dicke states, give them all unique weights from g[0] to J[2]: base, double, 2NN, 2NN double... PLACEHOLDER FOR NOW, IF IT DOESN'T HOLD UP REPLACE IT
@@ -73,7 +87,6 @@ def test_block_encoding_from_foqcs_lcu_prep():
 
     ref_state = np.zeros((2 ** (6 + 2 * L),), dtype="complex")
     zero_n = np.array([1] + [0] * (2**L - 1))
-    non_zero_states = []
 
     # g[0]
     ref_state += g[0] * np.kron(
@@ -109,13 +122,11 @@ def test_block_encoding_from_foqcs_lcu_prep():
         np.kron(zero_n, dicke_2NN),
     )
 
-    print(state.qs)
-
     print("State:")
     for i in range(2**14):
         bits = format(i, "014b")
-        amp = sv({state: bits})
-        if np.isclose(amp, 0j, atol=1e-6) == False: #np.real(amp):
+        amp = sv({d_state: bits})
+        if np.isclose(amp, 0j, atol=1e-6) == False:
             print(bits, amp)
 
     print()
@@ -129,13 +140,15 @@ def test_block_encoding_from_foqcs_lcu_prep():
             print(bits, i)
         q += 1
 
-    #print(init_ref)
+    # print(init_ref)
 
-    #expected = QuantumVariable(14)
-    #expected.init_state(init_ref, method="qiskit")
+    # expected = QuantumVariable(14)
+    # expected.init_state(init_ref, method="qiskit")
 
-    #print(f"State:\n{state}")
-    #print(f"Expected state:\n{expected}")
+    # print(f"State:\n{d_state}")
+    # print(f"Expected state:\n{expected}")
 
-    # Comparison of expected and actual states
-    assert sv == ref_state
+    zero = np.array([1, 0], dtype=complex)
+    ref_state_padded = np.kron(ref_state, zero)
+
+    assert np.allclose(state, ref_state_padded)
