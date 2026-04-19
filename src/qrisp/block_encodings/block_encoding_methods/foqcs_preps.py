@@ -76,13 +76,20 @@ def foqcs_prep_heisenberg_1D(
 
     _g = np.zeros((3,), dtype="complex")
     _J = np.zeros((3,), dtype="complex")
-    for q, i in enumerate(req_keys):
-        _g[q] = np.sqrt(g[i] * L)
-        _J[q] = np.sqrt(J[i] * (L - 1))
+    #for q, i in enumerate(req_keys):
+    #    _g[q] = np.sqrt(g[i] * L)
+    #    _J[q] = np.sqrt(J[i] * (L - 1))
+
+    _g[0] = np.sqrt(g["X"] * L)
+    _g[1] = np.sqrt(g["Y"] * L * -1j)
+    _g[2] = np.sqrt(g["Z"] * L)
+    _J[0] = np.sqrt(J["X"] * (L - 1))
+    _J[1] = np.sqrt(J["Y"] * -(L - 1))
+    _J[2] = np.sqrt(J["Z"] * (L - 1))
 
     # Correction for XZ = -iY
-    _J[1] = 1j * _J[1]
-    _g[1] = (1 - 1j) * _g[1] / np.sqrt(2)
+    #_J[1] = 1j * _J[1]
+    #_g[1] = (1 - 1j) * _g[1] / np.sqrt(2)
     # Normalization for state preparation
     norm = np.linalg.norm(np.block([_g, _J]))
     _g /= norm
@@ -100,35 +107,35 @@ def foqcs_prep_heisenberg_1D(
     lh1 = extra_anc + L - 1        # Last qubit first half
     fh2 = extra_anc + L            # First qubit second half
     lh2 = extra_anc + (L * 2) - 1  # Last qubit second half
-    # Balanced(1) on first half
+    # X gx: Balanced(1) on first half
     with control([prep_qv[0]]):
         x(prep_qv[lh1])
-        dicke_state(prep_qv[fh1:fh2], 1)
-    # Balanced(1) on second half
+        dicke_state(prep_qv[fh1:lh1 + 1], 1)
+    # Y gy: Double(1)
     with control([prep_qv[1]]):
-        x(prep_qv[fh2:lh2])
-        dicke_state(prep_qv[fh2:], 1)
-    # Double(1)
-    with control([prep_qv[2]]):
         x(prep_qv[lh1])
-        dicke_state(prep_qv[fh1:fh2], 1)
-        cx(prep_qv[fh1:fh2], prep_qv[fh2:])
-    # Balanced 2NN on first half
+        dicke_state(prep_qv[fh1:lh1 + 1], 1)
+        cx(prep_qv[fh1:lh1 + 1], prep_qv[fh2:])
+    # Z gz: Balanced(1) on second half
+    with control([prep_qv[2]]):
+        x(prep_qv[lh2])
+        dicke_state(prep_qv[fh2:], 1)
+    # X Jx: Balanced 2NN on first half
     with control([prep_qv[3]]):
         x(prep_qv[lh1 - 1])
         dicke_state(prep_qv[fh1:lh1], 1)
-        cx_ladder(prep_qv[fh1:fh2], 1)
-    # Balanced 2NN on second half
+        cx_ladder(prep_qv[fh1:lh1 + 1], 1)
+    # Y Jy: Double 2NN
     with control([prep_qv[4]]):
-        x(prep_qv[fh2:lh2 - 1])
-        dicke_state(prep_qv[fh2:lh2 - 1], 1)
-        cx_ladder(prep_qv[fh2:], 1)
-    # Double 2NN
-    with control([prep_qv[5]]):
         x(prep_qv[lh1 - 1])
         dicke_state(prep_qv[fh1:lh1], 1)
-        cx_ladder(prep_qv[fh1:fh2], 1)
-        cx(prep_qv[fh1:fh2], prep_qv[fh2:])
+        cx_ladder(prep_qv[fh1:lh1 + 1], 1)
+        cx(prep_qv[fh1:lh1 + 1], prep_qv[fh2:])
+    # Z Jz: Balanced 2NN on second half
+    with control([prep_qv[5]]):
+        x(prep_qv[lh2 - 1])
+        dicke_state(prep_qv[fh2:lh2], 1)
+        cx_ladder(prep_qv[fh2:], 1)
 
     return prep_qv
 
