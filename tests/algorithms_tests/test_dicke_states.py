@@ -47,10 +47,10 @@ def test_dicke_state_unbalanced():
     }, method="qswitch")
     qv = QuantumVariable(3)
 
-    amps = np.array([0.375, 0.375, 0.25], dtype=complex)
+    amps = np.array([0.25, 0.375, 0.375], dtype=complex)
 
     # Prepare Unbalanced Dicke state.
-    unbalanced_W_state(qv, amps)
+    unbalanced_W_state(qv, amps, True)
 
     print(f"Prepared: {qv}")
     print(f"Expected: {expected}")

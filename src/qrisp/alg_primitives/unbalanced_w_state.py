@@ -20,97 +20,118 @@ import numpy as np
 from qrisp import QuantumVariable, Qubit, x, xxyy, p
 from collections.abc import Sequence
 
-def unbalanced_W_state(qv: QuantumVariable | Sequence[Qubit], amplitudes):
+def unbalanced_W_state(
+    qv: QuantumVariable | Sequence[Qubit],
+    amplitudes: list,
+    reversed: bool = False
+) -> None:
     r"""
-    Prepare the generalized W state
+    Prepare a generalized W state (unbalanced Dicke state of Hamming weight 1)
+    on the given :ref:`QuantumVariable`.
 
-        |\psi> = \sum_{i=0}^{n-1} a_i |e_i>
+    The resulting quantum state is
 
-    on `qv`, where |e_i> is the computational basis state with a single 1
-    at position i.
+    .. math::
 
-    This is the Qrisp translation of the Silq implementation:
-    - build a heap-style tree of subtree weights |a_i|^2,
-    - recurse top-down to distribute one excitation,
-    - then imprint the target phases on the leaves.
+        |\psi\rangle \;=\; \sum_{i=0}^{n-1} a_i \,|e_i\rangle
+
+    where :math:`|e_i\rangle` is the computational basis state with a single
+    ``1`` at position `i`, and :math:`a_i` are the (possibly complex)
+    amplitudes given by ``amplitudes``. The input array is automatically
+    normalized so that :math:`\sum_i |a_i|^2 = 1`.
 
     Parameters
     ----------
     qv : QuantumVariable
-        Freshly allocated quantum register in |0...0>.
+        A freshly allocated :ref:`QuantumVariable` in the
+        :math:`|0\dots0\rangle` state whose size matches ``len(amplitudes)``.
     amplitudes : array_like
-        Complex target amplitudes, one per qubit.
+        A 1-D sequence of complex (or real) target amplitudes, one per qubit.
+        Its length must equal ``qv.size``.
+    reversed : bool, optional
+        If ``True``, reverse the order of the received amplitudes before
+        preparing the state. Default is ``False``
 
     Raises
     ------
     ValueError
-        If len(amplitudes) != qv.size or the amplitude vector is zero.
+        If ``len(amplitudes) != qv.size`` or if the amplitude vector is zero.
 
-    Example
+    Notes
+    -----
+    **Algorithm.**
+    The circuit distributes a single excitation across all qubits using a
+    linear chain of ``XXYY`` gates:
+
+    1. Apply ``X`` to qubit 0, producing :math:`|10\dots0\rangle`.
+    2. For each qubit :math:`i = 0, \dots, n{-}2`:
+
+       a. Compute :math:`\theta = 2\arccos(|a_i|\,/\,r_i)` where :math:`r_i`
+          is the remaining (undistributed) amplitude magnitude.
+       b. Apply ``XXYY(θ, π/2)`` on qubits :math:`(i,\, i{+}1)`.  In the
+          single-excitation subspace this acts as a parametrized partial swap,
+          leaving magnitude :math:`|a_i|` on qubit :math:`i` and passing the
+          rest to qubit :math:`i{+}1`.
+       c. Apply a phase gate :math:`P(\arg a_i)` on qubit :math:`i` to imprint
+          the correct complex phase.
+
+    3. Apply :math:`P(\arg a_{n-1})` on the last qubit.
+
+    **Resources.**
+    The circuit uses :math:`n{-}1` ``XXYY`` gates (each decomposable into
+    2 CNOTs + single-qubit rotations) and :math:`n` phase gates, yielding
+    :math:`\mathcal{O}(n)` depth and gate count.
+
+    Examples
     --------
-    ::
-        import numpy as np
-        from qrisp import QuantumVariable
-        a = np.array([1j, 2, 3, 4])
-        qv = QuantumVariable(4)
-        unbalanced_W_state(qv, a)
-        print(qv.qs.statevector())
+    >>> import numpy as np
+    >>> from qrisp import QuantumVariable
+    >>> a = np.array([1j, 2, 3, 4])
+    >>> qv = QuantumVariable(4)
+    >>> unbalanced_W_state(qv, a)
+    >>> print(qv.qs.statevector())
     """
     n = len(qv)
     a = np.asarray(amplitudes, dtype=complex)
+
+    if reversed:
+        a = a[::-1]
 
     if len(a) != n:
         raise ValueError(
             f"Length of amplitudes ({len(a)}) must match qv.size ({n})."
         )
 
-    norm = np.linalg.norm(a)
+    # Normalize so that <a|a> = 1
+    norm = np.sqrt(np.vdot(a, a).real)
     if norm < 1e-15:
         raise ValueError("Amplitude vector must be non-zero.")
     a = a / norm
+    abs_a = np.abs(a)
 
-    # Heap-style tree of subtree probability weights.
-    # We overallocate with 4*n slots, matching the Silq implementation.
-    t = np.zeros(4 * n, dtype=float)
-
-    def build(i, l, u):
-        if l + 1 == u:
-            t[i] = abs(a[l]) ** 2
-        else:
-            m = (l + u) // 2
-            build(2 * i + 1, l, m)
-            build(2 * i + 2, m, u)
-            t[i] = t[2 * i + 1] + t[2 * i + 2]
-
-    def rec(i, l, u):
-        # Invariant:
-        # qv[l:u] contains exactly one excitation, initially at qv[l].
-        if l + 1 == u or t[i] < 1e-15:
-            return
-
-        m = (l + u) // 2
-        alpha0 = t[2 * i + 1]
-        alpha1 = t[2 * i + 2]
-
-        # alpha0 + alpha1 = t[i] > 0 here
-        theta = 2 * np.arccos(np.sqrt(alpha0 / (alpha0 + alpha1)))
-
-        # Split between the left representative qv[l]
-        # and the right representative qv[m].
-        xxyy(theta, np.pi / 2, qv[l], qv[m])
-
-        rec(2 * i + 1, l, m)
-        rec(2 * i + 2, m, u)
-
-    build(0, 0, n)
-
-    # Start from |10...0>
+    # --- Step 1: place the single excitation on qubit 0  --->  |10...0>
     x(qv[0])
 
-    # Prepare the magnitudes
-    rec(0, 0, n)
+    # --- Step 2: redistribute amplitude along the qubit chain
+    # `remaining` tracks the magnitude still carried by the "active" qubit
+    # (the one that has not yet been peeled off).
+    remaining = 1.0
+    for i in range(n - 1):
+        # Choose θ so that cos(θ/2) = |a_i| / remaining,
+        # i.e. qubit i retains exactly magnitude |a_i|.
+        theta = 2 * np.arccos(np.clip(abs_a[i] / remaining, -1.0, 1.0))
 
-    # Imprint the target phases on the unique excited qubit
-    for i in range(n):
-        if abs(a[i]) > 1e-15:
-            p(np.angle(a[i]), qv[i])
+        # XXYY(θ, π/2) performs a parametrized partial swap in the
+        # single-excitation subspace {|01>, |10>}:
+        #   |10> -> cos(θ/2)|10> - sin(θ/2)|01>
+        xxyy(theta, np.pi / 2, qv[i], qv[i + 1])
+
+        # Update the undistributed amplitude magnitude for the next step
+        remaining *= np.sin(theta / 2)
+
+        # Imprint the complex phase of a_i onto qubit i
+        p(np.angle(a[i]), qv[i])
+
+    # --- Step 3: imprint the phase on the last qubit
+    p(np.angle(a[-1]), qv[-1])
+
