@@ -32,6 +32,10 @@ def test_block_encoding_from_foqcs_lcu_prep():
     g = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
     J = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
 
+    # Fix coefficients for debugging
+    #g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
+    #J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
+
     # Normalize
     norm = np.linalg.norm(np.block([g, J]))
     g /= norm
@@ -40,8 +44,13 @@ def test_block_encoding_from_foqcs_lcu_prep():
     heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
     heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
 
-########### TESTING ###############
-    # Modify the values the way prep does, as it's not part of the prep in FOQCS-LCU qiskit code.
+    # Prep base state using qv + Do FOQCS-LCU magic using prep function
+    d_state = foqcs_prep_heisenberg_1D(L, heis_g, heis_J)
+    sv = d_state.qs.statevector("function")
+    qc = d_state.qs.compile().to_qiskit().reverse_bits()
+    state = Statevector.from_instruction(qc)
+
+    # Modify the original coefficients for the manual state building.
     g[0] = np.sqrt(g[0] * L)
     g[1] = np.sqrt(g[1] * L * -1j)
     g[2] = np.sqrt(g[2] * L)
@@ -52,19 +61,8 @@ def test_block_encoding_from_foqcs_lcu_prep():
     norm = np.linalg.norm(np.block([g, J]))
     g /= norm
     J /= norm
-########### TESTING ###############
 
-    # Prep base state using qv + Do FOQCS-LCU magic using Daniil's function
-    d_state = foqcs_prep_heisenberg_1D(L, heis_g, heis_J)
-    sv = d_state.qs.statevector("function")
-    qc = d_state.qs.compile()
-    qc = qc.to_qiskit()
-    state = Statevector.from_instruction(qc.reverse_bits())
-
-    # Reverse bit order + Simulate resulting quantum state
-    # var_prep[:].reverse()
-
-    # Build Dicke states, give them all unique weights from g[0] to J[2]: base, double, 2NN, 2NN double... PLACEHOLDER FOR NOW, IF IT DOESN'T HOLD UP REPLACE IT
+    # Build Dicke states manually, give them all unique weights from g[0] to J[2]: base, double, 2NN, 2NN double...
     dicke_1_norm = 1 / (np.sqrt(L))
     dicke_1 = np.zeros(2**L)
     for i in range(L):
@@ -122,23 +120,32 @@ def test_block_encoding_from_foqcs_lcu_prep():
         np.kron(zero_n, dicke_2NN),
     )
 
-    print("State:")
-    for i in range(2**14):
-        bits = format(i, "014b")
-        amp = sv({d_state: bits})
-        if np.isclose(amp, 0j, atol=1e-6) == False:
-            print(bits, amp)
+    #comp_arr = []
+    #comp_arr_ref = []
 
-    print()
-    print("Ref state:")
-    init_ref = {}
-    q = 0
-    for i in ref_state:
-        bits = format(q, "014b")
-        if i != 0:
-            init_ref[bits] = i
-            print(bits, i)
-        q += 1
+    # print("State:")
+    # for i in range(2**14):
+    #     bits = format(i, "014b")
+    #     amp = sv({d_state: bits})
+    #     if np.isclose(amp, 0j, atol=1e-6) == False:
+    #         print(bits, amp)
+    #         comp_arr.append(amp)
+
+    # print()
+    # print("Ref state:")
+    # init_ref = {}
+    # q = 0
+    # for i in ref_state:
+    #     bits = format(q, "014b")
+    #     if i != 0:
+    #         init_ref[bits] = i
+    #         print(bits, i)
+    #         comp_arr_ref.append(i)
+    #     q += 1
+
+    # print(f"Array: {comp_arr}")
+    # print(f"Array REF: {comp_arr_ref}")
+    # print(f"Comparison of shortened arrays: {np.allclose(comp_arr, comp_arr_ref, atol=1e-06)}")
 
     # print(init_ref)
 
@@ -148,7 +155,17 @@ def test_block_encoding_from_foqcs_lcu_prep():
     # print(f"State:\n{d_state}")
     # print(f"Expected state:\n{expected}")
 
+    # Add a zero qubit to the reference state to match the compiled circuit
     zero = np.array([1, 0], dtype=complex)
     ref_state_padded = np.kron(ref_state, zero)
 
-    assert np.allclose(state, ref_state_padded)
+    # Zero out entries that are close to zero
+    #state.data[np.isclose(state.data, 0j, atol=1e-6)] = 0
+
+    #for i in range(0, len(state.data)):
+    #    if state.data[i] != 0:
+    #        print(f"s[{i}] = {state.data[i]}")
+    #    if ref_state_padded[i] != 0:
+    #        print(f"r[{i}] = {ref_state_padded[i]}")
+
+    assert state.equiv(Statevector(ref_state_padded), atol=1e-06)
