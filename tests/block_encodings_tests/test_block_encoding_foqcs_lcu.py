@@ -47,8 +47,9 @@ def test_block_encoding_from_foqcs_lcu_prep():
     # Prep base state using qv + Do FOQCS-LCU magic using prep function
     d_state = foqcs_prep_heisenberg_1D(L, heis_g, heis_J)
     sv = d_state.qs.statevector("function")
-    qc = d_state.qs.compile().to_qiskit().reverse_bits()
-    state = Statevector.from_instruction(qc)
+    # Take out the statevector from the compiled circuit
+    qc = d_state.qs.compile()
+    statev = qc.statevector_array()
 
     # Modify the original coefficients for the manual state building.
     g[0] = np.sqrt(g[0] * L)
@@ -159,13 +160,13 @@ def test_block_encoding_from_foqcs_lcu_prep():
     zero = np.array([1, 0], dtype=complex)
     ref_state_padded = np.kron(ref_state, zero)
 
-    # Zero out entries that are close to zero
-    #state.data[np.isclose(state.data, 0j, atol=1e-6)] = 0
+    #Zero out entries that are close to zero
+    #statev[np.isclose(statev, 0j, atol=1e-6)] = 0
 
-    #for i in range(0, len(state.data)):
-    #    if state.data[i] != 0:
-    #        print(f"s[{i}] = {state.data[i]}")
+    #for i in range(0, len(statev)):
+    #    if statev[i] != 0:
+    #        print(f"s[{i}] = {statev[i]}")
     #    if ref_state_padded[i] != 0:
     #        print(f"r[{i}] = {ref_state_padded[i]}")
 
-    assert state.equiv(Statevector(ref_state_padded), atol=1e-06)
+    assert np.allclose(statev, ref_state_padded, atol=1e-06)
