@@ -22,7 +22,7 @@ from qrisp import QuantumVariable
 from qrisp.block_encodings import foqcs_prep_heisenberg_1D
 from qiskit.quantum_info import Statevector
 
-def test_block_encoding_from_foqcs_lcu_prep():
+def test_foqcs_lcu_prep():
     """
     TODO: DOC
     """
@@ -44,9 +44,11 @@ def test_block_encoding_from_foqcs_lcu_prep():
     heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
     heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
 
+    d_state = QuantumVariable(L * 2 + 6)
+
     # Prep base state using qv + Do FOQCS-LCU magic using prep function
-    d_state = foqcs_prep_heisenberg_1D(L, heis_g, heis_J)
-    sv = d_state.qs.statevector("function")
+    foqcs_prep_heisenberg_1D(d_state, L, heis_g, heis_J)
+    #sv = d_state.qs.statevector("function")
     # Take out the statevector from the compiled circuit
     qc = d_state.qs.compile()
     statev = qc.statevector_array()

@@ -26,13 +26,17 @@ from collections.abc import Sequence
 from typing import Any, Callable, TYPE_CHECKING, Union
 
 def foqcs_prep_heisenberg_1D(
+    prep_qv: QuantumVariable | Sequence[Qubit],
     L: int,
     g: dict,
     J: dict
-) -> QuantumVariable:
+) -> None:
     """
     Parameters
     ----------
+    prep_qv : QuantumVariable | Sequence[Qubit]
+        Ancillae qubits register for PREP.
+
     L : int
         Number of system qubits in the Heisenberg chain.
 
@@ -73,6 +77,13 @@ def foqcs_prep_heisenberg_1D(
             f"J must contain exactly keys {sorted(req_keys)}. "
             f"Missing: {sorted(missing)}. Extra: {sorted(extra)}."
         )
+    
+    extra_anc = 6 # Depends on the method and can be potentially decreased
+    if len(prep_qv) != L * 2 + extra_anc:
+        raise ValueError(
+            f"Number of received ancillae qubits must be exactly "
+            f"{L * 2 + extra_anc}, but received {len(prep_qv)}"
+        )
 
     _g = np.zeros((3,), dtype="complex")
     _J = np.zeros((3,), dtype="complex")
@@ -94,10 +105,6 @@ def foqcs_prep_heisenberg_1D(
     norm = np.linalg.norm(np.block([_g, _J]))
     _g /= norm
     _J /= norm
-
-    # Initialise the PREP ancillae
-    extra_anc = 6 # Depends on the method and can be potentially decreased
-    prep_qv = QuantumVariable(L * 2 + extra_anc)
 
     # SUBPREP
     unbalanced_W_state(prep_qv[:extra_anc], np.block([_g, _J]))
@@ -124,18 +131,18 @@ def foqcs_prep_heisenberg_1D(
     with control([prep_qv[3]]):
         x(prep_qv[lh1 - 1])
         dicke_state(prep_qv[fh1:lh1], 1)
-        cx_ladder(prep_qv[fh1:lh1 + 1], 1)
+        _cx_ladder(prep_qv[fh1:lh1 + 1], 1)
     # Y Jy: Double 2NN
     with control([prep_qv[4]]):
         x(prep_qv[lh1 - 1])
         dicke_state(prep_qv[fh1:lh1], 1)
-        cx_ladder(prep_qv[fh1:lh1 + 1], 1)
+        _cx_ladder(prep_qv[fh1:lh1 + 1], 1)
         cx(prep_qv[fh1:lh1 + 1], prep_qv[fh2:])
     # Z Jz: Balanced 2NN on second half
     with control([prep_qv[5]]):
         x(prep_qv[lh2 - 1])
         dicke_state(prep_qv[fh2:lh2], 1)
-        cx_ladder(prep_qv[fh2:], 1)
+        _cx_ladder(prep_qv[fh2:], 1)
 
     return prep_qv
 
@@ -143,7 +150,7 @@ def foqcs_prep_heisenberg_1D(
 ############# Helpers #############
 ###################################
 
-def cx_ladder(qv: QuantumVariable | Sequence[Qubit], k: int = 1) -> None:
+def _cx_ladder(qv: QuantumVariable | Sequence[Qubit], k: int = 1) -> None:
     """
     TODO: DOC
     k - how many qubits to drag the control over. (1: neighbour, 2: 1 qubit over the neighbour, etc.)
@@ -151,11 +158,3 @@ def cx_ladder(qv: QuantumVariable | Sequence[Qubit], k: int = 1) -> None:
     n = len(qv)
     for i in reversed(range(0, n - k)):
         cx(qv[i], qv[i + k])
-
-def ecx(qv: QuantumVariable | Sequence[Qubit], split_index: int) -> None:
-    """
-    TODO: DOC
-
-    """
-    n =  len(qv)
-    cx(qv[:split_index], qv[split_index:])

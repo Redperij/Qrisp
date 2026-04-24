@@ -17,8 +17,17 @@
 """
 
 import numpy as np
-from qrisp import QuantumVariable, x, dicke_state, cx, unbalanced_W_state
-from qrisp.block_encodings import cx_ladder
+from qrisp import Qubit, QuantumVariable, x, dicke_state, cx, unbalanced_W_state
+from collections.abc import Sequence
+
+def _cx_ladder(qv: QuantumVariable | Sequence[Qubit], k: int = 1) -> None:
+    """
+    TODO: DOC
+    k - how many qubits to drag the control over. (1: neighbour, 2: 1 qubit over the neighbour, etc.)
+    """
+    n = len(qv)
+    for i in reversed(range(0, n - k)):
+        cx(qv[i], qv[i + k])
 
 def test_dicke_state_balanced():
     expected = QuantumVariable(3)
@@ -73,7 +82,7 @@ def test_dicke_state_balanced_2kN():
     dicke_state(qv[:n - k], 1)
 
     # Make it 2kN by using CNOT ladder
-    cx_ladder(qv, k)
+    _cx_ladder(qv, k)
 
     print(f"Prepared: {qv}")
     print(f"Expected: {expected}")
@@ -97,7 +106,7 @@ def test_dicke_state_unbalanced_2kN():
     unbalanced_W_state(qv[:n - k], amps)
 
     # Make it 2kN by using CNOT ladder
-    cx_ladder(qv, k)
+    _cx_ladder(qv, k)
 
     print(f"\nDepth = {qv.qs.depth()}")
     print(f"CNOT count = {qv.qs.cnot_count()}")
@@ -161,7 +170,7 @@ def test_dicke_state_balanced_double_2kN():
     # Prepare NN Dicke state on first half of qubits.
     x(qv[n // 2 - k - 1])
     dicke_state(qv[:n // 2 - k], 1)
-    cx_ladder(qv[:n // 2], k)
+    _cx_ladder(qv[:n // 2], k)
 
     # Make it double by dragging down control to the second half.
     cx(qv[:n // 2], qv[n // 2:])
@@ -184,7 +193,7 @@ def test_dicke_state_unbalanced_double_2kN():
 
     # Prepare Unbalanced Dicke state on first half of qubits.
     unbalanced_W_state(qv[:n // 2 - k], amps)
-    cx_ladder(qv[:n // 2], k)
+    _cx_ladder(qv[:n // 2], k)
 
     # Make it double by dragging down control to the second half.
     cx(qv[:n // 2], qv[n // 2:])
