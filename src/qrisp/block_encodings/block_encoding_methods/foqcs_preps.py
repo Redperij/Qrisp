@@ -18,11 +18,13 @@
 
 import numpy as np
 import numpy.typing as npt
-from qrisp.core import QuantumVariable, Qubit, x, cx
+from qrisp.core import QuantumVariable, Qubit
+from qrisp.core.gate_application_functions import x, cx
 from qrisp.alg_primitives.unbalanced_w_state import unbalanced_W_state
 from qrisp.alg_primitives.dicke_state_prep import dicke_state
 from qrisp.environments import control
 from collections.abc import Sequence
+from functools import partial
 from typing import Any, Callable, TYPE_CHECKING, Union
 
 def foqcs_prep_heisenberg_1D(
@@ -146,9 +148,37 @@ def foqcs_prep_heisenberg_1D(
 
     return prep_qv
 
+def foqcs_prep_different( qv: QuantumVariable, coeffs: list, some_param: float ) -> None:
+    print("I am doing nothing")
+
 ###################################
 ############# Helpers #############
 ###################################
+    
+def get_foqcs_lcu_prep_num_of_ancillae(prep: partial, num_ops: int = 1) -> int:
+    r"""
+        Constructs a BlockEncoding using the Fast One-Qubit-Controlled Select Linear Combination of Unitaries (FOQCS-LCU) protocol.
+
+        Parameters
+        ----------
+        prep : partial
+            Partially initialised FOQCS-LCU PREP method.
+        
+        num_ops : int
+            Number of operand qubits (L argument for FOQCS-LCU PREP routines).
+            The default is 1.
+
+        Returns
+        -------
+        int
+            An integer with number of ancillae required by the received FOQCS-LCU PREP method
+    """
+    if prep.func == foqcs_prep_heisenberg_1D:
+        return num_ops * 2 + 6
+    elif prep.func == foqcs_prep_different:
+        return 0
+    else:
+        raise ValueError(f"Received unknown FOQCS-LCU PREP routine: {prep}")
 
 def _cx_ladder(qv: QuantumVariable | Sequence[Qubit], k: int = 1) -> None:
     """

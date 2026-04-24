@@ -26,7 +26,7 @@ import numpy as np
 import numpy.typing as npt
 from qrisp.core import QuantumVariable
 from qrisp.alg_primitives.reflection import reflection
-from qrisp.core.gate_application_functions import gphase, h, ry, x, z
+from qrisp.core.gate_application_functions import gphase, h, ry, x, z, cx, cz
 from qrisp.environments import conjugate, control, invert
 from qrisp.interface import BackendClient
 from qrisp.jasp import (
@@ -42,6 +42,7 @@ from qrisp.operators import QubitOperator, FermionicOperator
 from qrisp.qtypes import QuantumBool, QuantumFloat
 from scipy.sparse import csr_array, csr_matrix
 from typing import Any, Callable, TYPE_CHECKING, Union
+from qrisp.block_encodings.block_encoding_methods import get_foqcs_lcu_prep_num_of_ancillae
 
 if TYPE_CHECKING:
     from jax.typing import ArrayLike
@@ -527,18 +528,25 @@ class BlockEncoding:
     @classmethod
     def from_foqcs_lcu_prep(
         cls: "BlockEncoding",
-        prep: QuantumVariable,
+        prep: Callable[[QuantumVariable], None],
         num_ops: int = 1,
+        is_hermitian: bool = False,
     ) -> BlockEncoding:
         r"""
         Constructs a BlockEncoding using the Fast One-Qubit-Controlled Select Linear Combination of Unitaries (FOQCS-LCU) protocol.
 
         Parameters
         ----------
-        prep : QuantumVariable
+        prep_qv : QuantumVariable
             Prepared ancillas by one of the FOQCS preparation routines.
+        
         num_ops : int
-            The number of operand quantum variables. The default is 1.
+            Number of operand qubits (L argument for FOQCS-LCU PREP routines).
+            The default is 1.
+
+        is_hermitian : bool
+            Indicates whether the block-encoding unitary is Hermitian. (???) Set to True, if all provided unitaries are Hermitian.
+            The default is False.
 
         Returns
         -------
@@ -561,7 +569,39 @@ class BlockEncoding:
 
 
         """
-        raise NotImplementedError
+        from qrisp.jasp import q_switch
+
+        n_anc = get_foqcs_lcu_prep_num_of_ancillae(prep, num_ops)
+
+        #raise NotImplementedError
+
+        alpha = 1
+
+        # FOQCS-LCU SELECT
+        def _select(num_ops: int, ancillae, *operands):
+            extra_anc = len(ancillae) - num_ops * 2
+            #print(f"Type of ancillae is {type(ancillae)}")
+            #print(f"Type of operands is {type(operands)}")
+            #print(f"Type of operands[0] is {type(operands[0])}")
+            #print(f"Len ancillae is {len(ancillae)}")
+            #print(f"Len operands[0] is {len(operands[0])}")
+            
+            cx(ancillae[extra_anc:extra_anc + num_ops], operands[0])
+            cz(ancillae[extra_anc + num_ops:], operands[0])
+
+        #@qache
+        def unitary(*args):
+            # LCU = PREP SELECT PREP_dg
+            with conjugate(prep)(args[0]):
+                _select(num_ops, args[0], *args[1:])
+    
+        return BlockEncoding(
+            alpha,
+            [QuantumVariable(n_anc).template()],
+            unitary,
+            num_ops=1,
+            is_hermitian=is_hermitian,
+        )
 
     #
     # Utilities
