@@ -31,7 +31,8 @@ def foqcs_prep_heisenberg_1D(
     prep_qv: QuantumVariable | Sequence[Qubit],
     L: int,
     g: dict,
-    J: dict
+    J: dict,
+    conjugate: bool = False
 ) -> None:
     """
     Parameters
@@ -109,6 +110,10 @@ def foqcs_prep_heisenberg_1D(
     _g /= norm
     _J /= norm
 
+    if conjugate:
+        _g = np.conj(_g)
+        _J = np.conj(_J)
+
     # SUBPREP
     unbalanced_W_state(prep_qv[:extra_anc], np.block([_g, _J]), extra_anc)
 
@@ -146,8 +151,6 @@ def foqcs_prep_heisenberg_1D(
         x(prep_qv[lh2 - 1])
         dicke_state(prep_qv[fh2:lh2], 1, L - 1)
         _cx_ladder(prep_qv[fh2:], L, 1)
-
-    return prep_qv
 
 def foqcs_prep_different( qv: QuantumVariable, coeffs: list, some_param: float ) -> None:
     print("I am doing nothing")

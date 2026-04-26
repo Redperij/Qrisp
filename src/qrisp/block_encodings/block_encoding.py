@@ -530,7 +530,9 @@ class BlockEncoding:
         cls: "BlockEncoding",
         prep: Callable[[QuantumVariable], None],
         num_ops: int = 1,
+        unprep: Callable[[QuantumVariable], None] = None,
         is_hermitian: bool = False,
+        alpha: int = 1
     ) -> BlockEncoding:
         r"""
         Constructs a BlockEncoding using the Fast One-Qubit-Controlled Select Linear Combination of Unitaries (FOQCS-LCU) protocol.
@@ -573,9 +575,8 @@ class BlockEncoding:
 
         n_anc = get_foqcs_lcu_prep_num_of_ancillae(prep, num_ops)
 
-        #raise NotImplementedError
-
-        alpha = 1
+        if unprep is None:
+            unprep = prep
 
         # FOQCS-LCU SELECT
         def _select(num_ops: int, n_anc: int, ancillae, *operands):
@@ -592,9 +593,14 @@ class BlockEncoding:
         @qache
         def unitary(*args):
             # LCU = PREP SELECT PREP_dg
-            with conjugate(prep)(args[0]):
-                _select(num_ops, n_anc, args[0], *args[1:])
-    
+            #with conjugate(prep)(args[0]):
+            #    _select(num_ops, n_anc, args[0], *args[1:])
+
+            prep(args[0])
+            _select(num_ops, n_anc, args[0], *args[1:])
+            with invert():
+                unprep(args[0])
+
         return BlockEncoding(
             alpha,
             [QuantumVariable(n_anc).template()],
