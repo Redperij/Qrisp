@@ -81,11 +81,12 @@ def foqcs_prep_heisenberg_1D(
         )
     
     extra_anc = 6 # Depends on the method and can be potentially decreased
-    if len(prep_qv) != L * 2 + extra_anc:
-        raise ValueError(
-            f"Number of received ancillae qubits must be exactly "
-            f"{L * 2 + extra_anc}, but received {len(prep_qv)}"
-        )
+    num_anc = L * 2 + extra_anc
+    # if len(prep_qv) != L * 2 + extra_anc:
+    #     raise ValueError(
+    #         f"Number of received ancillae qubits must be exactly "
+    #         f"{L * 2 + extra_anc}, but received {len(prep_qv)}"
+    #     )
 
     _g = np.zeros((3,), dtype="complex")
     _J = np.zeros((3,), dtype="complex")
@@ -109,7 +110,7 @@ def foqcs_prep_heisenberg_1D(
     _J /= norm
 
     # SUBPREP
-    unbalanced_W_state(prep_qv[:extra_anc], np.block([_g, _J]))
+    unbalanced_W_state(prep_qv[:extra_anc], np.block([_g, _J]), extra_anc)
 
     # PREP
     fh1 = extra_anc                # First qubit first half
@@ -119,32 +120,32 @@ def foqcs_prep_heisenberg_1D(
     # X gx: Balanced(1) on first half
     with control([prep_qv[0]]):
         x(prep_qv[lh1])
-        dicke_state(prep_qv[fh1:lh1 + 1], 1)
+        dicke_state(prep_qv[fh1:lh1 + 1], 1, L)
     # Y gy: Double(1)
     with control([prep_qv[1]]):
         x(prep_qv[lh1])
-        dicke_state(prep_qv[fh1:lh1 + 1], 1)
+        dicke_state(prep_qv[fh1:lh1 + 1], 1, L)
         cx(prep_qv[fh1:lh1 + 1], prep_qv[fh2:])
     # Z gz: Balanced(1) on second half
     with control([prep_qv[2]]):
         x(prep_qv[lh2])
-        dicke_state(prep_qv[fh2:], 1)
+        dicke_state(prep_qv[fh2:], 1, L)
     # X Jx: Balanced 2NN on first half
     with control([prep_qv[3]]):
         x(prep_qv[lh1 - 1])
-        dicke_state(prep_qv[fh1:lh1], 1)
-        _cx_ladder(prep_qv[fh1:lh1 + 1], 1)
+        dicke_state(prep_qv[fh1:lh1], 1, L - 1)
+        _cx_ladder(prep_qv[fh1:lh1 + 1], L, 1)
     # Y Jy: Double 2NN
     with control([prep_qv[4]]):
         x(prep_qv[lh1 - 1])
-        dicke_state(prep_qv[fh1:lh1], 1)
-        _cx_ladder(prep_qv[fh1:lh1 + 1], 1)
+        dicke_state(prep_qv[fh1:lh1], 1, L - 1)
+        _cx_ladder(prep_qv[fh1:lh1 + 1], L, 1)
         cx(prep_qv[fh1:lh1 + 1], prep_qv[fh2:])
     # Z Jz: Balanced 2NN on second half
     with control([prep_qv[5]]):
         x(prep_qv[lh2 - 1])
-        dicke_state(prep_qv[fh2:lh2], 1)
-        _cx_ladder(prep_qv[fh2:], 1)
+        dicke_state(prep_qv[fh2:lh2], 1, L - 1)
+        _cx_ladder(prep_qv[fh2:], L, 1)
 
     return prep_qv
 
@@ -180,11 +181,10 @@ def get_foqcs_lcu_prep_num_of_ancillae(prep: partial, num_ops: int = 1) -> int:
     else:
         raise ValueError(f"Received unknown FOQCS-LCU PREP routine: {prep}")
 
-def _cx_ladder(qv: QuantumVariable | Sequence[Qubit], k: int = 1) -> None:
+def _cx_ladder(qv: QuantumVariable | Sequence[Qubit], n: int, k: int = 1) -> None:
     """
     TODO: DOC
     k - how many qubits to drag the control over. (1: neighbour, 2: 1 qubit over the neighbour, etc.)
     """
-    n = len(qv)
     for i in reversed(range(0, n - k)):
         cx(qv[i], qv[i + k])

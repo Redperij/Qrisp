@@ -202,42 +202,103 @@ def test_block_encoding_from_foqcs_lcu_prep():
     )
 
     be = BlockEncoding.from_foqcs_lcu_prep(prep, L)
+
+    def operand_prep(phi):
+        qv = QuantumVariable(4)
+        return qv
+
+    def main(BE):
+        operand = operand_prep(np.pi / 4)
+        ancillas = BE.apply(operand)
+        return operand, ancillas
+
+    operand, ancillas = main(be)
+    res_dict = multi_measurement([operand] + ancillas)
+
+    print(f"Res dict = {res_dict}")
+
+    # Filtering only zero ancillae entries
+    zero_anc = "0" * len(ancillas[0])
+    filtered = {
+        key: value
+        for key, value in res_dict.items()
+        if key[1] == zero_anc
+    }
+
+    print(f"\n\nFiltered dict = {filtered}")
+
+    # operand = QuantumVariable(4)
+    # result = be.apply(operand)
     
-    # To use me you have to remove all len(qv) down the line. (dicke_state, unbalanced_W_state, and various sanity checks and debug prints)
-    #@terminal_sampling
-    #def main():
-    #    return be.apply_rus(lambda: QuantumVariable(4))()
-    
-    #result = main()
-
-    # def operand_prep(phi):
-    #     qv = QuantumFloat(4)
-    #     return qv
-
-    # def main(BE):
-    #     operand = operand_prep(np.pi / 4)
-    #     ancillas = BE.apply(operand)
-    #     return operand, ancillas
-
-    # operand, ancillas = main(be)
-    # res_dict = multi_measurement([operand] + ancillas)
-
-    # print(f"Res dict = {res_dict}")
-
-    # # Post-selection on ancillas being in |0> state
-    # filtered_dict = {k[0]: p for k, p in res_dict.items() \
-    #                 if all(x == 0 for x in k[1:])}
-    # success_prob = sum(filtered_dict.values())
-    # filtered_dict = {k: p / success_prob for k, p in filtered_dict.items()}
-    # print(f"Filtered = {filtered_dict}")
-
-    operand = QuantumVariable(4)
-    result = be.apply(operand)
-    
-    print(f"Res = {result[0]}")
-    print(f"Op = {operand}")
-    print(operand.qs)
-    print(f"Op measurement = {operand.get_measurement()}")
-    print(f"Res measurement = {result[0].get_measurement()}")
+    # print(f"Res = {result[0]}")
+    # print(f"Op = {operand}")
+    # print(operand.qs)
+    # print(f"Op measurement = {operand.get_measurement()}")
+    # print(f"Res measurement = {result[0].get_measurement()}")
 
     assert False
+
+
+
+def test_xxyy_prep_conjugate_jasp():
+    import numpy as np
+    from qrisp import QuantumVariable, conjugate, xxyy
+    from qrisp.jasp import terminal_sampling
+
+    coeffs = np.ones(6, dtype=complex)
+
+    def prep(qv):
+        xxyy(coeffs[0], np.pi / 2, qv[0], qv[1])
+
+    @terminal_sampling
+    def main():
+        qv = QuantumVariable(6)
+        with conjugate(prep)(qv):
+            pass
+        #prep(qv)
+        return qv
+
+    main()
+
+"""
+def test_block_encoding_from_foqcs_lcu_prep_jax():
+    # Initialize variables + their values
+    L = 4
+    g = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
+    J = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
+
+    # Fix coefficients for debugging
+    g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
+    J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
+
+    # Normalize
+    norm = np.linalg.norm(np.block([g, J]))
+    g /= norm
+    J /= norm
+
+    # Construct dictionary input expected by foqcs_prep_heisenberg_1D()
+    heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
+    heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
+
+    # Prep base state using qv + Do FOQCS-LCU magic using prep function
+    #d_state = foqcs_prep_heisenberg_1D(L, heis_g, heis_J)
+    prep = partial(
+        foqcs_prep_heisenberg_1D,
+        L=L,
+        g=heis_g,
+        J=heis_J,
+    )
+
+    be = BlockEncoding.from_foqcs_lcu_prep(prep, L)
+
+    # xxyy gate doesn't work
+    @terminal_sampling
+    def main():
+        return be.apply_rus(lambda: QuantumVariable(4))()
+    
+    result = main()
+
+    print(result)
+
+    assert False
+"""

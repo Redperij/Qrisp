@@ -578,8 +578,8 @@ class BlockEncoding:
         alpha = 1
 
         # FOQCS-LCU SELECT
-        def _select(num_ops: int, ancillae, *operands):
-            extra_anc = len(ancillae) - num_ops * 2
+        def _select(num_ops: int, n_anc: int, ancillae, *operands):
+            extra_anc = n_anc - num_ops * 2
             #print(f"Type of ancillae is {type(ancillae)}")
             #print(f"Type of operands is {type(operands)}")
             #print(f"Type of operands[0] is {type(operands[0])}")
@@ -589,11 +589,11 @@ class BlockEncoding:
             cx(ancillae[extra_anc:extra_anc + num_ops], operands[0])
             cz(ancillae[extra_anc + num_ops:], operands[0])
 
-        #@qache
+        @qache
         def unitary(*args):
             # LCU = PREP SELECT PREP_dg
             with conjugate(prep)(args[0]):
-                _select(num_ops, args[0], *args[1:])
+                _select(num_ops, n_anc, args[0], *args[1:])
     
         return BlockEncoding(
             alpha,

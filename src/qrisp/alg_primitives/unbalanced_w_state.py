@@ -23,6 +23,7 @@ from collections.abc import Sequence
 def unbalanced_W_state(
     qv: QuantumVariable | Sequence[Qubit],
     amplitudes: list,
+    num_qubits: int = 0,
     reversed: bool = False
 ) -> None:
     r"""
@@ -91,7 +92,11 @@ def unbalanced_W_state(
     >>> unbalanced_W_state(qv, a)
     >>> print(qv.qs.statevector())
     """
-    n = len(qv)
+    if num_qubits == 0:
+        n = len(qv)
+    else:
+        n = num_qubits
+
     a = np.asarray(amplitudes, dtype=complex)
 
     if reversed:
