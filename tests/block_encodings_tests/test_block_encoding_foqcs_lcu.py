@@ -22,6 +22,20 @@ from qrisp import QuantumVariable, terminal_sampling, QuantumFloat, multi_measur
 from qrisp.block_encodings import foqcs_prep_heisenberg_1D, foqcs_prep_different
 from functools import partial
 
+def heisenberg_from_def(L: int, g: dict, J: dict):
+
+    assert len(J) == 3, "J must be a list of length 3."
+    assert len(g) == 3, "g must be list a of length 3."
+    sigma_list = [np.array([[0,1],[1,0]]), np.array([[0,-1j],[1j,0]]), np.array([[1,0],[0,-1]])]
+    H = np.zeros((2**L, 2**L))
+    for k, sigma in enumerate(sigma_list):
+        sisj = np.kron(sigma, sigma)
+        for i in range(L):
+            if i < L-1:
+                H = H + J[k] * np.kron(np.identity(2**i), np.kron(sisj, np.identity(2**(L-i-2))))
+            H = H + g[k] * np.kron(np.identity(2**i), np.kron(sigma, np.identity(2**(L-i-1))))
+    return H
+
 def test_foqcs_lcu_prep():
     """
     TODO: DOC
@@ -203,19 +217,40 @@ def test_block_encoding_from_foqcs_lcu_prep():
 
     be = BlockEncoding.from_foqcs_lcu_prep(prep, L)
 
-    def operand_prep(phi):
-        qv = QuantumVariable(4)
-        return qv
+    qv = QuantumVariable(4)
+
+    psi = np.random.uniform(-1, 1, 2 ** (L)) + 1j * np.random.uniform(
+            -1, 1, 2 ** (L)
+        )
+    psi /= np.linalg.norm(psi)
+
+    qv.init_state(psi, method="qswitch")
 
     def main(BE):
-        operand = operand_prep(np.pi / 4)
+        operand = qv
         ancillas = BE.apply(operand)
         return operand, ancillas
 
     operand, ancillas = main(be)
+
+    qc = operand.qs.compile()
+    sv = qc.statevector_array()
+    res_ops = []
+
+    for i in range(0, 2 ** L):
+
+        ind = i << (len(ancillas[0]) + 1)
+        res_ops.append(sv[ind])
+
     res_dict = multi_measurement([operand] + ancillas)
 
-    print(f"Res dict = {res_dict}")
+    # print(f"Res dict = {res_dict}")
+    H = heisenberg_from_def(L, g, J)
+
+    ref_state = H @ psi
+
+    print(f"Ref state = {ref_state}")
+    print(f"Resulting operands = {res_ops}")
 
     # Filtering only zero ancillae entries
     zero_anc = "0" * len(ancillas[0])
