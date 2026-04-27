@@ -279,6 +279,9 @@ class Operation:
                 res = inverse_circ.to_op(name=self.name[:-3])
             else:
                 res = inverse_circ.to_op(name=self.name + "_dg")
+            
+            res.params = list(self.params)
+            res.abstract_params = set(self.abstract_params)
 
         elif self.name == "qb_alloc":
             from qrisp.circuit import QubitDealloc
