@@ -575,31 +575,26 @@ class BlockEncoding:
 
         n_anc = get_foqcs_lcu_prep_num_of_ancillae(prep, num_ops)
 
-        if unprep is None:
-            unprep = prep
-
         # FOQCS-LCU SELECT
         def _select(num_ops: int, n_anc: int, ancillae, *operands):
             extra_anc = n_anc - num_ops * 2
-            #print(f"Type of ancillae is {type(ancillae)}")
-            #print(f"Type of operands is {type(operands)}")
-            #print(f"Type of operands[0] is {type(operands[0])}")
-            #print(f"Len ancillae is {len(ancillae)}")
-            #print(f"Len operands[0] is {len(operands[0])}")
-            
             cx(ancillae[extra_anc:extra_anc + num_ops], operands[0])
             cz(ancillae[extra_anc + num_ops:], operands[0])
 
-        @qache
-        def unitary(*args):
-            # LCU = PREP SELECT PREP_dg
-            #with conjugate(prep)(args[0]):
-            #    _select(num_ops, n_anc, args[0], *args[1:])
-
-            prep(args[0])
-            _select(num_ops, n_anc, args[0], *args[1:])
-            with invert():
-                unprep(args[0])
+        if unprep is None:
+            @qache
+            def unitary(*args):
+                # LCU = PREP SELECT PREP^dg
+                with conjugate(prep)(args[0]):
+                    _select(num_ops, n_anc, args[0], *args[1:])
+        else:
+            @qache
+            def unitary(*args):
+                # LCU = PREP_R SELECT PREP_L^dg (note: PREP(a)^dg != PREP(a*)^dg, where PREP(a) = PREP_R, and PREP(a*) = PREP_L)
+                prep(args[0])
+                _select(num_ops, n_anc, args[0], *args[1:])
+                with invert():
+                    unprep(args[0])
 
         return BlockEncoding(
             alpha,

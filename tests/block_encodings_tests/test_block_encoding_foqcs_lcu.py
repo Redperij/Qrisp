@@ -185,6 +185,7 @@ def test_foqcs_lcu_prep():
     #    if ref_state_padded[i] != 0:
     #        print(f"r[{i}] = {ref_state_padded[i]}")
 
+    # Test that the state received is the same as the reference.
     assert np.allclose(statev, ref_state_padded, atol=1e-06)
 
 def test_block_encoding_from_foqcs_lcu_prep():
@@ -194,8 +195,8 @@ def test_block_encoding_from_foqcs_lcu_prep():
     J = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
 
     # Fix coefficients for debugging
-    #g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
-    #J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
+    # g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
+    # J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
 
     # Normalize
     norm = np.linalg.norm(np.block([g, J]))
@@ -218,14 +219,13 @@ def test_block_encoding_from_foqcs_lcu_prep():
     heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
     heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
 
-    # Create partial PREP and PREP^conj functions to be used by FOQCS-LCU
+    # Create partial PREP_R and PREP_L^dagger functions to be used by FOQCS-LCU
     prep = partial(
         foqcs_prep_heisenberg_1D,
         L=L,
         g=heis_g,
         J=heis_J,
     )
-
     unprep = partial(
         foqcs_prep_heisenberg_1D,
         L=L,
@@ -266,56 +266,21 @@ def test_block_encoding_from_foqcs_lcu_prep():
     def bit_reverse(i: int, n: int) -> int:
         return int(f"{i:0{n}b}"[::-1], 2)
 
-    # Take out the resulting oeprands with zero ancillas amplitude.
+    # Take out the resulting operands with zero ancillas amplitude.
     res_ops = []
     for i in range(0, 2 ** L):
         qi = bit_reverse(i, L)
         ind = qi << (len(ancillas[0]) + 1)
         res_ops.append(sv[ind])
 
-    # print(f"Res dict = {res_dict}")
+    # Construct reference state vector
     H = _heisenberg_from_def(L, g, J) / (norm ** 2)
-
     ref_state = H @ psi
 
     print(f"Ref state = {ref_state}")
     print(f"Resulting operands = {res_ops}")
 
-    # # Do the measurement for visual check
-    # res_dict = multi_measurement([operand] + ancillas)
-    # # Filtering only zero ancillae entries
-    # zero_anc = "0" * len(ancillas[0])
-    # filtered = {
-    #     key: value
-    #     for key, value in res_dict.items()
-    #     if key[1] == zero_anc
-    # }
-
-    # print(f"\n\nFiltered dict = {filtered}")
-    # print(f"Filtered dict amps sum: {sum(filtered.values())}")
-
     assert np.allclose(res_ops, ref_state, atol=1e-6)
-
-"""
-def test_xxyy_prep_conjugate_jasp():
-    import numpy as np
-    from qrisp import QuantumVariable, conjugate, xxyy
-    from qrisp.jasp import terminal_sampling
-
-    coeffs = np.ones(6, dtype=complex)
-
-    def prep(qv):
-        xxyy(coeffs[0], np.pi / 2, qv[0], qv[1])
-
-    @terminal_sampling
-    def main():
-        qv = QuantumVariable(6)
-        with conjugate(prep)(qv):
-            pass
-        #prep(qv)
-        return qv
-
-    main()
 
 def test_block_encoding_from_foqcs_lcu_prep_jax():
     # Initialize variables + their values
@@ -324,37 +289,101 @@ def test_block_encoding_from_foqcs_lcu_prep_jax():
     J = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
 
     # Fix coefficients for debugging
-    g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
-    J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
+    # g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
+    # J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
 
     # Normalize
     norm = np.linalg.norm(np.block([g, J]))
     g /= norm
     J /= norm
 
+    # actual parameters for the PREP
+    _g = np.zeros((3,), dtype="complex")
+    _J = np.zeros((3,), dtype="complex")
+    for i in range(3):
+        _g[i] = np.sqrt(g[i] * L)
+        _J[i] = np.sqrt(J[i] * (L - 1))
+    # Correction for XZ = -iY
+    _J[1] = 1j * _J[1]
+    _g[1] = (1 - 1j) * _g[1] / np.sqrt(2)
+    # normalization for block encoding
+    norm = np.linalg.norm(np.block([_g, _J]))
+
     # Construct dictionary input expected by foqcs_prep_heisenberg_1D()
     heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
     heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
 
-    # Prep base state using qv + Do FOQCS-LCU magic using prep function
-    #d_state = foqcs_prep_heisenberg_1D(L, heis_g, heis_J)
+    # Create partial PREP_R and PREP_L^dagger functions to be used by FOQCS-LCU
     prep = partial(
         foqcs_prep_heisenberg_1D,
         L=L,
         g=heis_g,
         J=heis_J,
     )
+    unprep = partial(
+        foqcs_prep_heisenberg_1D,
+        L=L,
+        g=heis_g,
+        J=heis_J,
+        conjugate=True
+    )
 
-    be = BlockEncoding.from_foqcs_lcu_prep(prep, L)
+    be = BlockEncoding.from_foqcs_lcu_prep(prep=prep, num_ops=L, unprep=unprep, alpha=norm ** 2)
 
-    # xxyy gate doesn't work
+    # Generate state amplitudes.
+    psi = np.random.uniform(-1, 1, 2 ** (L)) + 1j * np.random.uniform(
+        -1, 1, 2 ** (L)
+    )
+    # Fix operands state for debugging
+    # psi = [0.57501513+0.26902124j, -0.16783319+0.96769323j, -0.15515405+0.02518714j,
+    #        -0.90288347-0.93298597j, 0.08905568-0.48063457j,  0.34150327+0.74670678j,
+    #        -0.06620886+0.96652259j, 0.76446858+0.88954485j,  0.26407693-0.21105958j,
+    #        -0.64653787-0.73012458j, 0.29551929+0.96235332j, -0.23794186-0.8503716j,
+    #         0.58938419-0.67645356j, 0.04926328-0.06230936j,  0.74225725-0.00355716j,
+    #         0.62479001+0.83636103j
+    #         ]
+    psi /= np.linalg.norm(psi)
+
+    def operand_prep(psi):
+        qv = QuantumVariable(4)
+        qv.init_state(psi, method="qswitch")
+        return qv
+
+    qv_manual = operand_prep(psi)
+    def main_apply(BE):
+        operand = qv_manual
+        ancillas = BE.apply(operand)
+        return operand, ancillas
+
     @terminal_sampling
-    def main():
-        return be.apply_rus(lambda: QuantumVariable(4))()
-    
-    result = main()
+    def main_apply_rus(BE):
+        return BE.apply_rus(operand_prep)(psi)
 
-    print(result)
+    # Do the measurement manually
+    operand, ancillas = main_apply(be)
 
-    assert False
-"""
+    res_dict = multi_measurement([operand] + ancillas)
+    # Filtering only zero ancillae entries
+    zero_anc = "0" * len(ancillas[0])
+    filtered = {
+        key: value
+        for key, value in res_dict.items()
+        if key[1] == zero_anc
+    }
+    success_prob = sum(filtered.values())
+    filtered_conditional = {
+        int(operand_bits[::-1], 2): prob / success_prob
+        for (operand_bits, anc_bits), prob in filtered.items()
+    }
+
+    print(f"\n\nFiltered dict = {filtered_conditional}")
+    print(f"Filtered dict amps sum: {sum(filtered_conditional.values())}")
+
+    # Do the measurement using RUS
+    result_rus = main_apply_rus(be)
+    print(result_rus)
+    print(sum(result_rus.values()))
+
+    assert np.allclose([filtered_conditional[k] for k in sorted(filtered_conditional)],
+                       [result_rus[k] for k in sorted(result_rus)],
+                       atol = 1e-4)

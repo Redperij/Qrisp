@@ -59,7 +59,7 @@ def test_dicke_state_unbalanced():
     amps = np.array([0.25, 0.375, 0.375], dtype=complex)
 
     # Prepare Unbalanced Dicke state.
-    unbalanced_W_state(qv, amps, True)
+    unbalanced_W_state(qv, amps, reversed=True)
 
     print(f"Prepared: {qv}")
     print(f"Expected: {expected}")
