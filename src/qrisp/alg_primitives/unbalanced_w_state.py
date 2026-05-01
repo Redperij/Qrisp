@@ -49,6 +49,8 @@ def unbalanced_W_state(
     amplitudes : array_like
         A 1-D sequence of complex (or real) target amplitudes, one per qubit.
         Its length must equal ``qv.size``.
+    num_qubits : int
+        Number of passed qubits, used instead of `len(qv)` call if specified to any value other than 0. Default is 0
     reversed : bool, optional
         If ``True``, reverse the order of the received amplitudes before
         preparing the state. Default is ``False``

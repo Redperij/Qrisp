@@ -48,10 +48,11 @@ def foqcs_prep_heisenberg_1D(
 
     J : dict (length 3)
         Dictionary of coupling coefficients for the Heisenberg interaction. {"X": Jx, "Y": Jy, "Z": Jz}
-    
-    Returns
-    -------
-    ???
+
+    conjugate : bool = False
+        Indicates whether the prep is PREP_R or PREP_L.
+        In case of PREP_L, the conjugates of g and J are used.
+        The default is False, which indicates it is PREP_R.
 
     Raises
     ------
@@ -152,7 +153,10 @@ def foqcs_prep_heisenberg_1D(
         dicke_state(prep_qv[fh2:lh2], 1, L - 1)
         _cx_ladder(prep_qv[fh2:], L, 1)
 
-def foqcs_prep_different( qv: QuantumVariable, coeffs: list, some_param: float ) -> None:
+def foqcs_prep_placeholder( qv: QuantumVariable, coeffs: list, some_param: float ) -> None:
+    """
+    TO-DO DOC
+    """
     print("I am doing nothing")
 
 ###################################
@@ -179,15 +183,12 @@ def get_foqcs_lcu_prep_num_of_ancillae(prep: partial, num_ops: int = 1) -> int:
     """
     if prep.func == foqcs_prep_heisenberg_1D:
         return num_ops * 2 + 6
-    elif prep.func == foqcs_prep_different:
+    elif prep.func == foqcs_prep_placeholder:
         return 0
     else:
         raise ValueError(f"Received unknown FOQCS-LCU PREP routine: {prep}")
 
 def _cx_ladder(qv: QuantumVariable | Sequence[Qubit], n: int, k: int = 1) -> None:
-    """
-    TODO: DOC
-    k - how many qubits to drag the control over. (1: neighbour, 2: 1 qubit over the neighbour, etc.)
-    """
+
     for i in reversed(range(0, n - k)):
         cx(qv[i], qv[i + k])
