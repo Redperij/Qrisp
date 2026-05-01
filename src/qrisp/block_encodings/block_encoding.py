@@ -529,78 +529,144 @@ class BlockEncoding:
     def from_foqcs_lcu_prep(
         cls: "BlockEncoding",
         prep: Callable[[QuantumVariable], None],
-        num_ops: int = 1,
+        num_q_ops: int = 1,
         unprep: Callable[[QuantumVariable], None] = None,
         is_hermitian: bool = False,
-        alpha: int = 1
+        norm: "ArrayLike" = 1
     ) -> BlockEncoding:
         r"""
         Constructs a BlockEncoding using the Fast One-Qubit-Controlled Select Linear Combination of Unitaries (FOQCS-LCU) protocol.
 
         Parameters
         ----------
-        prep_qv : QuantumVariable
-            Prepared ancillas by one of the FOQCS preparation routines.
+        prep : Callable[[QuantumVariable], None]
+            Partial PREP_R function with all relevant parameters passed except QuantumVariable.
         
-        num_ops : int
+        num_q_ops : int
             Number of operand qubits (L argument for FOQCS-LCU PREP routines).
             The default is 1.
+
+        unprep : Callable[[QuantumVariable], None] = None
+            Complex conjugate transpose of PREP_R with conjugated parameters (READ NOTE ON THIS!!!), 
+            also a partial function variable with all relevant parameters passed except QuantumVariable.
+            The default is None, in which case the unprep is calculated using the prep parameter.
 
         is_hermitian : bool
             Indicates whether the block-encoding unitary is Hermitian. (???) Set to True, if all provided unitaries are Hermitian.
             The default is False.
+        
+        norm : "ArrayLike"
+            Normalization factor.
+            The default is 1 in case no normalization factor is passed.
 
         Returns
         -------
         BlockEncoding
             A BlockEncoding using FOQCS LCU.
 
-        Raises
-        ------
-        ValueError
-            ?
-
         Notes
         -----
-        - ?
+        - PREP_R is the PREP subcircuit for FOQCS-LCU, PREP_L^dagger is the unprep subcircuit and therefore has to undo
+          what PREP_R did to the ancilla qubits. PREP_L is a version of PREP_R that is prepared using
+          conjugated parameters. PREP_L^dagger undoes the PREP_R operation in its entirety.
 
         Examples
         --------
 
         ::
 
+        # Initialize variables + their values
+        L = 4
+        g = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
+        J = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
+
+        # Normalize
+        norm = np.linalg.norm(np.block([g, J]))
+        g /= norm
+        J /= norm
+
+        # Calculating the normalization factor
+        _g = np.zeros((3,), dtype="complex")
+        _J = np.zeros((3,), dtype="complex")
+
+        for i in range(3):
+            _g[i] = np.sqrt(g[i] * L)
+            _J[i] = np.sqrt(J[i] * (L - 1))
+
+        # Correction for XZ = -iY
+        _J[1] = 1j * _J[1]
+        _g[1] = (1 - 1j) * _g[1] / np.sqrt(2)
+
+        # Normalization for block encoding
+        norm = np.linalg.norm(np.block([_g, _J]))
+
+        # Construct dictionary input expected by foqcs_prep_heisenberg_1D()
+        heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
+        heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
+
+        # Create partial PREP_R and PREP_L^dagger functions to be used by FOQCS-LCU
+        prep = partial(
+            foqcs_prep_heisenberg_1D,
+            L=L,
+            g=heis_g,
+            J=heis_J,
+        )
+        unprep = partial(
+            foqcs_prep_heisenberg_1D,
+            L=L,
+            g=heis_g,
+            J=heis_J,
+            conjugate=True
+        )
+
+        be = BlockEncoding.from_foqcs_lcu_prep(prep=prep, num_q_ops=L, unprep=unprep, norm=norm ** 2)
+
+        psi = _prep_psi(L)
+
+        def operand_prep(psi):
+            qv = QuantumVariable(4)
+            qv.init_state(psi, method="qswitch")
+            return qv
+
+        @terminal_sampling
+            def main_apply_rus(BE):
+                return BE.apply_rus(operand_prep)(psi)
+                
+        # Do the measurement using RUS
+            result_rus = main_apply_rus(be)
+            print(result_rus)
 
         """
         from qrisp.jasp import q_switch
 
-        n_anc = get_foqcs_lcu_prep_num_of_ancillae(prep, num_ops)
+        n_anc = get_foqcs_lcu_prep_num_of_ancillae(prep, num_q_ops)
 
         # FOQCS-LCU SELECT
-        def _select(num_ops: int, n_anc: int, ancillae, *operands):
-            extra_anc = n_anc - num_ops * 2
-            cx(ancillae[extra_anc:extra_anc + num_ops], operands[0])
-            cz(ancillae[extra_anc + num_ops:], operands[0])
+        def _select(num_q_ops: int, n_anc: int, ancillae, *operands):
+            extra_anc = n_anc - num_q_ops * 2
+            cx(ancillae[extra_anc:extra_anc + num_q_ops], operands[0])
+            cz(ancillae[extra_anc + num_q_ops:], operands[0])
 
         if unprep is None:
             @qache
             def unitary(*args):
                 # LCU = PREP SELECT PREP^dg
                 with conjugate(prep)(args[0]):
-                    _select(num_ops, n_anc, args[0], *args[1:])
+                    _select(num_q_ops, n_anc, args[0], *args[1:])
         else:
             @qache
             def unitary(*args):
                 # LCU = PREP_R SELECT PREP_L^dg (note: PREP(a)^dg != PREP(a*)^dg, where PREP(a) = PREP_R, and PREP(a*) = PREP_L)
                 prep(args[0])
-                _select(num_ops, n_anc, args[0], *args[1:])
+                _select(num_q_ops, n_anc, args[0], *args[1:])
                 with invert():
                     unprep(args[0])
 
         return BlockEncoding(
-            alpha,
+            norm,
             [QuantumVariable(n_anc).template()],
             unitary,
-            num_ops=1,
+            num_q_ops=1,
             is_hermitian=is_hermitian,
         )
 

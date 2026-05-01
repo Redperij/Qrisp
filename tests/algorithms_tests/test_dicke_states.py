@@ -21,10 +21,6 @@ from qrisp import Qubit, QuantumVariable, x, dicke_state, cx, unbalanced_W_state
 from collections.abc import Sequence
 
 def _cx_ladder(qv: QuantumVariable | Sequence[Qubit], k: int = 1) -> None:
-    """
-    TODO: DOC
-    k - how many qubits to drag the control over. (1: neighbour, 2: 1 qubit over the neighbour, etc.)
-    """
     n = len(qv)
     for i in reversed(range(0, n - k)):
         cx(qv[i], qv[i + k])
