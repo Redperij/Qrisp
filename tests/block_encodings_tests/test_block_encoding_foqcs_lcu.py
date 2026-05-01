@@ -18,8 +18,8 @@
 
 import numpy as np
 from qrisp.block_encodings import BlockEncoding
-from qrisp import QuantumVariable, terminal_sampling, QuantumFloat, multi_measurement
-from qrisp.block_encodings import foqcs_prep_heisenberg_1D, foqcs_prep_different
+from qrisp import QuantumVariable, terminal_sampling, multi_measurement
+from qrisp.block_encodings import foqcs_prep_heisenberg_1D
 from functools import partial
 
 def _heisenberg_from_def(L: int, g: dict, J: dict):
@@ -53,10 +53,6 @@ def _prep_psi(q_num):
     return psi
 
 def test_foqcs_lcu_prep():
-    """
-    TODO: DOC
-    """
-
     # Initialize variables + their values
     L = 4
     g = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
@@ -250,7 +246,7 @@ def test_block_encoding_from_foqcs_lcu_prep():
         conjugate=True
     )
 
-    be = BlockEncoding.from_foqcs_lcu_prep(prep, L, unprep=unprep, alpha=norm ** 2)
+    be = BlockEncoding.from_foqcs_lcu_prep(prep, L, unprep=unprep, norm=norm ** 2)
 
     qv = QuantumVariable(4)
 
@@ -333,7 +329,7 @@ def test_block_encoding_from_foqcs_lcu_prep_jax():
         conjugate=True
     )
 
-    be = BlockEncoding.from_foqcs_lcu_prep(prep=prep, num_ops=L, unprep=unprep, alpha=norm ** 2)
+    be = BlockEncoding.from_foqcs_lcu_prep(prep=prep, num_q_ops=L, unprep=unprep, norm=norm ** 2)
 
     psi = _prep_psi(L)
 
@@ -431,7 +427,7 @@ def test_block_encoding_from_foqcs_lcu_bench_lcu():
         conjugate=True
     )
 
-    be1 = BlockEncoding.from_foqcs_lcu_prep(prep=prep, num_ops=L, unprep=unprep, alpha=norm ** 2)
+    be1 = BlockEncoding.from_foqcs_lcu_prep(prep=prep, num_q_ops=L, unprep=unprep, norm=norm ** 2)
 
     H = sum(
         heis_g["X"] * X(i)
@@ -474,7 +470,7 @@ def test_block_encoding_from_foqcs_lcu_bench_lcu():
                 basis_gates=["rz", "sx", "x", "cx"],
                 optimization_level=0,
             )
-    
+
     counts1 = tqc1.count_ops()
     counts2 = tqc2.count_ops()
 
@@ -488,3 +484,5 @@ def test_block_encoding_from_foqcs_lcu_bench_lcu():
     print("Counts:", counts2)
     print("Depth:", tqc2.depth())
     print("Qubits:", tqc2.num_qubits)
+
+    assert True

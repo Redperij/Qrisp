@@ -666,7 +666,7 @@ class BlockEncoding:
             norm,
             [QuantumVariable(n_anc).template()],
             unitary,
-            num_q_ops=1,
+            num_ops=1,
             is_hermitian=is_hermitian,
         )
 
