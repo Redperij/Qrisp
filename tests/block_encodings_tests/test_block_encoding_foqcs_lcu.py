@@ -19,7 +19,7 @@
 import numpy as np
 from qrisp.block_encodings import BlockEncoding
 from qrisp import QuantumVariable, terminal_sampling, multi_measurement
-from qrisp.block_encodings import foqcs_prep_heisenberg_1D
+from qrisp.block_encodings import foqcs_prep_heisenberg_1D, foqcs_prep_heisenberg_1D_optimal
 from functools import partial
 
 def _heisenberg_from_def(L: int, g: dict, J: dict):
@@ -200,6 +200,157 @@ def test_foqcs_lcu_prep():
     # Test that the state received is the same as the reference.
     assert np.allclose(statev, ref_state_padded, atol=1e-06)
 
+def test_foqcs_lcu_prep_optimal():
+    # Initialize variables + their values
+    L = 4
+    g = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
+    J = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
+
+    # Fix coefficients for debugging
+    # g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
+    # J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
+
+    # Normalize
+    norm = np.linalg.norm(np.block([g, J]))
+    g /= norm
+    J /= norm
+
+    heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
+    heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
+
+    d_state = QuantumVariable(L * 2 + 6)
+
+    # Prep base state using qv + Do FOQCS-LCU magic using prep function
+    foqcs_prep_heisenberg_1D_optimal(d_state, L, heis_g, heis_J)
+    #sv = d_state.qs.statevector("function")
+    # Take out the statevector from the compiled circuit
+    qc = d_state.qs.compile()
+    statev = qc.statevector_array()
+
+    # Modify the original coefficients for the manual state building.
+    # g[0] = np.sqrt(g[0] * L)
+    # g[1] = np.sqrt(g[1] * L * -1j)
+    # g[2] = np.sqrt(g[2] * L)
+    # J[0] = np.sqrt(J[0] * (L - 1))
+    # J[1] = np.sqrt(J[1] * -(L - 1))
+    # J[2] = np.sqrt(J[2] * (L - 1))
+    g[0] = np.sqrt(heis_g["X"] * L)
+    g[2] = np.sqrt(heis_g["Y"] * L * -1j)
+    g[1] = np.sqrt(heis_g["Z"] * L)
+    J[0] = np.sqrt(heis_J["X"] * (L - 1))
+    J[2] = np.sqrt(heis_J["Y"] * -(L - 1))
+    J[1] = np.sqrt(heis_J["Z"] * (L - 1))
+
+    norm = np.linalg.norm(np.block([g, J]))
+    g /= norm
+    J /= norm
+
+    # Build Dicke states manually, give them all unique weights from g[0] to J[2]: base, double, 2NN, 2NN double...
+    dicke_1_norm = 1 / (np.sqrt(L))
+    dicke_1 = np.zeros(2**L)
+    for i in range(L):
+        dicke_1[2**i] = dicke_1_norm
+
+    dicke_double = np.zeros(4**L)
+    for i in range(L):
+        dicke_double[2**i + 2 ** (L + i)] = dicke_1_norm
+
+    dicke_2NN_norm = 1 / (np.sqrt(L - 1))
+    dicke_2NN = np.zeros((2**L,), dtype="complex")
+    for i in range(L - 1):
+        dicke_2NN[2**i + 2 ** (i + 1)] = dicke_2NN_norm
+
+    dicke_2NN_double = np.zeros((4**L,), dtype="complex")
+    for i in range(L - 1):
+        dicke_2NN_double[
+            2**i + 2 ** (i + 1) + 2 ** (i + L) + 2 ** (i + L + 1)
+        ] = dicke_2NN_norm
+
+    ref_state = np.zeros((2 ** (6 + 2 * L),), dtype="complex")
+    zero_n = np.array([1] + [0] * (2**L - 1))
+
+    # g[0]
+    ref_state += g[0] * np.kron(
+            [1 if i == 2 ** (6 - 1) else 0 for i in range(2**6)],
+            np.kron(dicke_1, zero_n),
+        )
+
+    # g[1]
+    ref_state += g[1] * np.kron(
+        [1 if i == 2 ** (6 - 2) else 0 for i in range(2**6)], np.kron(zero_n, dicke_1)
+    )
+
+    # g[2]
+    ref_state += g[2] * np.kron(
+        [1 if i == 2 ** (6 - 3) else 0 for i in range(2**6)],
+        dicke_double,
+    )
+
+    # J[0]
+    ref_state += J[0] * np.kron(
+        [1 if i == 2 ** (6 - 4) else 0 for i in range(2**6)],
+        np.kron(dicke_2NN, zero_n),
+    )
+
+    # J[1]
+    ref_state += J[1] * np.kron(
+        [1 if i == 2 ** (6 - 5) else 0 for i in range(2**6)], np.kron(zero_n, dicke_2NN)
+    )
+
+    # J[2]
+    ref_state += J[2] * np.kron(
+        [1 if i == 2 ** (6 - 6) else 0 for i in range(2**6)],
+        dicke_2NN_double,
+    )
+
+
+    #comp_arr = []
+    #comp_arr_ref = []
+
+    # print("State:")
+    # for i in range(2**14):
+    #     bits = format(i, "014b")
+    #     amp = sv({d_state: bits})
+    #     if np.isclose(amp, 0j, atol=1e-6) == False:
+    #         print(bits, amp)
+    #         comp_arr.append(amp)
+
+    # print()
+    # print("Ref state:")
+    # init_ref = {}
+    # q = 0
+    # for i in ref_state:
+    #     bits = format(q, "014b")
+    #     if i != 0:
+    #         init_ref[bits] = i
+    #         print(bits, i)
+    #         comp_arr_ref.append(i)
+    #     q += 1
+
+    # print(f"Array: {comp_arr}")
+    # print(f"Array REF: {comp_arr_ref}")
+    # print(f"Comparison of shortened arrays: {np.allclose(comp_arr, comp_arr_ref, atol=1e-06)}")
+
+    # print(init_ref)
+
+    # expected = QuantumVariable(14)
+    # expected.init_state(init_ref, method="qiskit")
+
+    # print(f"State:\n{d_state}")
+    # print(f"Expected state:\n{expected}")
+
+    #Zero out entries that are close to zero
+    # statev[np.isclose(statev, 0j, atol=1e-6)] = 0
+
+    # for i in range(0, len(statev)):
+    #     if statev[i] != 0:
+    #         print(f"s[{i}] = {statev[i]}")
+    #     if ref_state[i] != 0:
+    #         print(f"r[{i}] = {ref_state[i]}")
+
+    # Test that the state received is the same as the reference.
+    assert np.allclose(statev, ref_state, atol=1e-06)
+
 def test_block_encoding_from_foqcs_lcu_prep():
     # Initialize variables + their values
     L = 4
@@ -272,6 +423,89 @@ def test_block_encoding_from_foqcs_lcu_prep():
     for i in range(0, 2 ** L):
         qi = bit_reverse(i, L)
         ind = qi << (len(ancillas[0]) + 1)
+        res_ops.append(sv[ind])
+
+    # Construct reference state vector
+    H = _heisenberg_from_def(L, g, J) / (norm ** 2)
+    ref_state = H @ psi
+
+    print(f"Ref state = {ref_state}")
+    print(f"Resulting operands = {res_ops}")
+
+    assert np.allclose(res_ops, ref_state, atol=1e-6)
+
+def test_block_encoding_from_foqcs_lcu_prep_optimal():
+    # Initialize variables + their values
+    L = 4
+    g = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
+    J = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
+
+    # Fix coefficients for debugging
+    # g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
+    # J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
+
+    # Normalize
+    norm = np.linalg.norm(np.block([g, J]))
+    g /= norm
+    J /= norm
+
+    # actual parameters for the PREP
+    _g = np.zeros((3,), dtype="complex")
+    _J = np.zeros((3,), dtype="complex")
+    for i in range(3):
+        _g[i] = np.sqrt(g[i] * L)
+        _J[i] = np.sqrt(J[i] * (L - 1))
+    # Correction for XZ = -iY
+    _J[1] = 1j * _J[1]
+    _g[1] = (1 - 1j) * _g[1] / np.sqrt(2)
+    # normalization for state preparation
+    norm = np.linalg.norm(np.block([_g, _J]))
+
+    # Construct dictionary input expected by foqcs_prep_heisenberg_1D()
+    heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
+    heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
+
+    # Create partial PREP_R and PREP_L^dagger functions to be used by FOQCS-LCU
+    prep = partial(
+        foqcs_prep_heisenberg_1D_optimal,
+        L=L,
+        g=heis_g,
+        J=heis_J,
+    )
+    unprep = partial(
+        foqcs_prep_heisenberg_1D_optimal,
+        L=L,
+        g=heis_g,
+        J=heis_J,
+        conjugate=True
+    )
+
+    be = BlockEncoding.from_foqcs_lcu_prep(prep, L, unprep=unprep, norm=norm ** 2)
+
+    qv = QuantumVariable(4)
+
+    psi = _prep_psi(L)
+
+    qv.init_state(psi, method="qswitch")
+
+    def main(BE):
+        operand = qv
+        ancillas = BE.apply(operand)
+        return operand, ancillas
+
+    operand, ancillas = main(be)
+
+    qc = operand.qs.compile()
+    sv = qc.statevector_array()
+
+    def bit_reverse(i: int, n: int) -> int:
+        return int(f"{i:0{n}b}"[::-1], 2)
+
+    # Take out the resulting operands with zero ancillas amplitude.
+    res_ops = []
+    for i in range(0, 2 ** L):
+        qi = bit_reverse(i, L)
+        ind = qi << len(ancillas[0])
         res_ops.append(sv[ind])
 
     # Construct reference state vector
@@ -421,6 +655,115 @@ def test_block_encoding_from_foqcs_lcu_bench_lcu():
     )
     unprep = partial(
         foqcs_prep_heisenberg_1D,
+        L=L,
+        g=heis_g,
+        J=heis_J,
+        conjugate=True
+    )
+
+    be1 = BlockEncoding.from_foqcs_lcu_prep(prep=prep, num_q_ops=L, unprep=unprep, norm=norm ** 2)
+
+    H = sum(
+        heis_g["X"] * X(i)
+        + heis_g["Y"] * Y(i)
+        + heis_g["Z"] * Z(i)
+        for i in range(L)
+    )
+
+    H += sum(
+        heis_J["X"] * X(i) * X(i + 1)
+        + heis_J["Y"] * Y(i) * Y(i + 1)
+        + heis_J["Z"] * Z(i) * Z(i + 1)
+        for i in range(L - 1)
+    )
+
+    be2 = BlockEncoding.from_operator(H)
+
+    psi = _prep_psi(L)
+    qv = QuantumVariable(4)
+    qv.init_state(psi, method="qswitch")
+
+    res1 = be1.resources(qv)
+    res2 = be2.resources(qv)
+
+    print(f"Resources comp\nFOQCS-LCU:\n{res1}\nLCU:\n{res2}")
+
+    be1.apply(qv)
+    qc1 = qv.qs.compile().to_qiskit()
+    be2.apply(qv)
+    qc2 = qv.qs.compile().to_qiskit()
+
+    tqc1 = transpile(
+                qc1,
+                basis_gates=["rz", "sx", "x", "cx"],
+                optimization_level=0,
+            )
+
+    tqc2 = transpile(
+                qc2,
+                basis_gates=["rz", "sx", "x", "cx"],
+                optimization_level=0,
+            )
+
+    counts1 = tqc1.count_ops()
+    counts2 = tqc2.count_ops()
+
+    print("FOQCS-LCU")
+    print("CX count:", counts1.get("cx", 0))
+    print("Counts:", counts1)
+    print("Depth:", tqc1.depth())
+    print("Qubits:", tqc1.num_qubits)
+    print("LCU")
+    print("CX count:", counts2.get("cx", 0))
+    print("Counts:", counts2)
+    print("Depth:", tqc2.depth())
+    print("Qubits:", tqc2.num_qubits)
+
+    assert True
+
+def test_block_encoding_from_foqcs_lcu_optimal_bench_lcu():
+    from qrisp.operators import X, Y, Z
+    from qiskit import transpile
+    # Test FOQCS-LCU resources agains normal LCU
+    # Initialize variables + their values
+    L = 4
+    g = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
+    J = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
+
+    # Fix coefficients for debugging
+    # g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
+    # J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
+
+    # Normalize
+    norm = np.linalg.norm(np.block([g, J]))
+    g /= norm
+    J /= norm
+
+    # actual parameters for the PREP
+    _g = np.zeros((3,), dtype="complex")
+    _J = np.zeros((3,), dtype="complex")
+    for i in range(3):
+        _g[i] = np.sqrt(g[i] * L)
+        _J[i] = np.sqrt(J[i] * (L - 1))
+    # Correction for XZ = -iY
+    _J[1] = 1j * _J[1]
+    _g[1] = (1 - 1j) * _g[1] / np.sqrt(2)
+    # normalization for block encoding
+    norm = np.linalg.norm(np.block([_g, _J]))
+
+    # Construct dictionary input expected by foqcs_prep_heisenberg_1D()
+    heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
+    heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
+
+    # Create partial PREP_R and PREP_L^dagger functions to be used by FOQCS-LCU
+    prep = partial(
+        foqcs_prep_heisenberg_1D_optimal,
+        L=L,
+        g=heis_g,
+        J=heis_J,
+    )
+    unprep = partial(
+        foqcs_prep_heisenberg_1D_optimal,
         L=L,
         g=heis_g,
         J=heis_J,

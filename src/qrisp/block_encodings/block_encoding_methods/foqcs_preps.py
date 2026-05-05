@@ -19,7 +19,7 @@
 import numpy as np
 import numpy.typing as npt
 from qrisp.core import QuantumVariable, Qubit
-from qrisp.core.gate_application_functions import x, cx
+from qrisp.core.gate_application_functions import x, cx, ry
 from qrisp.alg_primitives.unbalanced_w_state import unbalanced_W_state
 from qrisp.alg_primitives.dicke_state_prep import dicke_state
 from qrisp.environments import control
@@ -83,18 +83,9 @@ def foqcs_prep_heisenberg_1D(
         )
     
     extra_anc = 6 # Depends on the method and can be potentially decreased
-    num_anc = L * 2 + extra_anc
-    # if len(prep_qv) != L * 2 + extra_anc:
-    #     raise ValueError(
-    #         f"Number of received ancillae qubits must be exactly "
-    #         f"{L * 2 + extra_anc}, but received {len(prep_qv)}"
-    #     )
 
     _g = np.zeros((3,), dtype="complex")
     _J = np.zeros((3,), dtype="complex")
-    #for q, i in enumerate(req_keys):
-    #    _g[q] = np.sqrt(g[i] * L)
-    #    _J[q] = np.sqrt(J[i] * (L - 1))
 
     _g[0] = np.sqrt(g["X"] * L)
     _g[1] = np.sqrt(g["Y"] * L * -1j)
@@ -103,9 +94,6 @@ def foqcs_prep_heisenberg_1D(
     _J[1] = np.sqrt(J["Y"] * -(L - 1))
     _J[2] = np.sqrt(J["Z"] * (L - 1))
 
-    # Correction for XZ = -iY
-    #_J[1] = 1j * _J[1]
-    #_g[1] = (1 - 1j) * _g[1] / np.sqrt(2)
     # Normalization for state preparation
     norm = np.linalg.norm(np.block([_g, _J]))
     _g /= norm
@@ -153,6 +141,127 @@ def foqcs_prep_heisenberg_1D(
         dicke_state(prep_qv[fh2:lh2], 1, L - 1)
         _cx_ladder(prep_qv[fh2:], L, 1)
 
+def foqcs_prep_heisenberg_1D_optimal(
+    prep_qv: QuantumVariable | Sequence[Qubit],
+    L: int,
+    g: dict,
+    J: dict,
+    conjugate: bool = False
+) -> None:
+    """
+    Parameters
+    ----------
+    prep_qv : QuantumVariable | Sequence[Qubit]
+        Ancillae qubits register for PREP.
+
+    L : int
+        Number of system qubits in the Heisenberg chain.
+
+    g : dict (length 3)
+        Dictionary of local field coefficients. {"X": gx, "Y": gy, "Z": gz}
+
+    J : dict (length 3)
+        Dictionary of coupling coefficients for the Heisenberg interaction. {"X": Jx, "Y": Jy, "Z": Jz}
+
+    conjugate : bool = False
+        Indicates whether the prep is PREP_R or PREP_L.
+        In case of PREP_L, the conjugates of g and J are used.
+        The default is False, which indicates it is PREP_R.
+
+    Raises
+    ------
+    ValueError
+        If ``g`` or ``J`` has length .
+
+    """
+    # Check that received g and J dictionaries exactly contain the expected entries.
+    req_keys = {"X", "Y", "Z"}
+
+    g_keys = set(g.keys())
+    J_keys = set(J.keys())
+
+    if g_keys != req_keys:
+        missing = req_keys - g_keys
+        extra = g_keys - req_keys
+        raise ValueError(
+            f"g must contain exactly keys {sorted(req_keys)}. "
+            f"Missing: {sorted(missing)}. Extra: {sorted(extra)}."
+        )
+
+    if J_keys != req_keys:
+        missing = req_keys - J_keys
+        extra = J_keys - req_keys
+        raise ValueError(
+            f"J must contain exactly keys {sorted(req_keys)}. "
+            f"Missing: {sorted(missing)}. Extra: {sorted(extra)}."
+        )
+    
+    extra_anc = 6 # Depends on the method and can be potentially decreased
+
+    _g = np.zeros((3,), dtype="complex")
+    _J = np.zeros((3,), dtype="complex")
+
+    _g[0] = np.sqrt(g["X"] * L)
+    _g[1] = np.sqrt(g["Z"] * L)
+    _g[2] = np.sqrt(g["Y"] * L * -1j)
+    _J[0] = np.sqrt(J["X"] * (L - 1))
+    _J[1] = np.sqrt(J["Z"] * (L - 1))
+    _J[2] = np.sqrt(J["Y"] * -(L - 1))
+
+    # Normalization for state preparation
+    norm = np.linalg.norm(np.block([_g, _J]))
+    _g /= norm
+    _J /= norm
+
+    if conjugate:
+        _g = np.conj(_g)
+        _J = np.conj(_J)
+
+    # SUBPREP
+    unbalanced_W_state(prep_qv[:extra_anc], np.block([_g, _J]), extra_anc)
+    
+    # PREP
+    fh1 = extra_anc                # First qubit first half
+    lh1 = extra_anc + L - 1        # Last qubit first half
+    fh2 = extra_anc + L            # First qubit second half
+    lh2 = extra_anc + (L * 2) - 1  # Last qubit second half
+
+    # 3 specific CNOTs
+    cx(prep_qv[0], prep_qv[lh1])
+    cx(prep_qv[1], prep_qv[lh2])
+    cx(prep_qv[2], prep_qv[lh1])
+    # 2 parallel Gamma gates
+    theta = 2 * np.acos(np.sqrt(1 / (L - 1 + 1)))
+    _gamma_gate(prep_qv[lh1 - 1], prep_qv[lh1], theta)
+    _gamma_gate(prep_qv[lh2 - 1], prep_qv[lh2], theta)
+    # 3 specific CNOTs
+    cx(prep_qv[3], prep_qv[lh1 - 1])
+    cx(prep_qv[4], prep_qv[lh2 - 1])
+    cx(prep_qv[5], prep_qv[lh1 - 1])
+    # 2 parallel delta gates
+    theta_coeffs = []
+    for i in range(1, L - 1):
+        theta_coeffs.append(2 * np.acos(np.sqrt(1 / (i + 1))))
+    _delta_gate(prep_qv[fh1:lh1], theta_coeffs)
+    _delta_gate(prep_qv[fh2:lh2], theta_coeffs)
+    # One spec CNOT
+    cx(prep_qv[3], prep_qv[5])
+    # controlled CNOT ladder
+    with control(prep_qv[5]):
+        _cx_ladder(prep_qv[fh1:lh1 + 1], L)
+    # One spec CNOT
+    cx(prep_qv[3], prep_qv[5])
+    # controlled CNOT ladder
+    with control(prep_qv[4]):
+        _cx_ladder(prep_qv[fh2:], L)
+    # One spec CNOT
+    cx(prep_qv[2], prep_qv[5])
+    # controlled Element-wise CNOT
+    with control(prep_qv[5]):
+        cx(prep_qv[fh1:lh1 + 1], prep_qv[fh2:])
+    # One spec CNOT
+    cx(prep_qv[2], prep_qv[5])
+
 def foqcs_prep_placeholder( qv: QuantumVariable, coeffs: list, some_param: float ) -> None:
     """
     TO-DO DOC
@@ -183,6 +292,8 @@ def get_foqcs_lcu_prep_num_of_ancillae(prep: partial, num_ops: int = 1) -> int:
     """
     if prep.func == foqcs_prep_heisenberg_1D:
         return num_ops * 2 + 6
+    elif prep.func == foqcs_prep_heisenberg_1D_optimal:
+        return num_ops * 2 + 6
     elif prep.func == foqcs_prep_placeholder:
         return 0
     else:
@@ -192,3 +303,15 @@ def _cx_ladder(qv: QuantumVariable | Sequence[Qubit], n: int, k: int = 1) -> Non
 
     for i in reversed(range(0, n - k)):
         cx(qv[i], qv[i + k])
+
+def _gamma_gate(qv_rot: Any, qv_x: Any, theta: float):
+    with control(qv_x):
+        ry(theta, qv_rot)
+    cx(qv_rot, qv_x)
+
+def _delta_gate(qv: QuantumVariable | Sequence[Qubit], theta_coeffs):
+    if len(theta_coeffs) == 1:
+        _gamma_gate(qv[0], qv[1], theta_coeffs[0])
+    else:
+        _gamma_gate(qv[-2], qv[-1], theta_coeffs[-1])
+        _delta_gate(qv[:-1], theta_coeffs[:-1])
