@@ -207,8 +207,8 @@ def test_foqcs_lcu_prep_optimal():
     J = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
 
     # Fix coefficients for debugging
-    # g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
-    # J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
+    #g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
+    #J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
 
     # Normalize
     norm = np.linalg.norm(np.block([g, J]))
@@ -228,18 +228,12 @@ def test_foqcs_lcu_prep_optimal():
     statev = qc.statevector_array()
 
     # Modify the original coefficients for the manual state building.
-    # g[0] = np.sqrt(g[0] * L)
-    # g[1] = np.sqrt(g[1] * L * -1j)
-    # g[2] = np.sqrt(g[2] * L)
-    # J[0] = np.sqrt(J[0] * (L - 1))
-    # J[1] = np.sqrt(J[1] * -(L - 1))
-    # J[2] = np.sqrt(J[2] * (L - 1))
-    g[0] = np.sqrt(heis_g["X"] * L)
-    g[2] = np.sqrt(heis_g["Y"] * L * -1j)
-    g[1] = np.sqrt(heis_g["Z"] * L)
-    J[0] = np.sqrt(heis_J["X"] * (L - 1))
-    J[2] = np.sqrt(heis_J["Y"] * -(L - 1))
-    J[1] = np.sqrt(heis_J["Z"] * (L - 1))
+    g[0] = np.sqrt(g[0] * L)
+    g[1] = np.sqrt(g[1] * L * -1j)
+    g[2] = np.sqrt(g[2] * L)
+    J[0] = np.sqrt(J[0] * (L - 1))
+    J[1] = np.sqrt(J[1] * -(L - 1))
+    J[2] = np.sqrt(J[2] * (L - 1))
 
     norm = np.linalg.norm(np.block([g, J]))
     g /= norm
@@ -274,16 +268,16 @@ def test_foqcs_lcu_prep_optimal():
             [1 if i == 2 ** (6 - 1) else 0 for i in range(2**6)],
             np.kron(dicke_1, zero_n),
         )
-
+    
     # g[1]
     ref_state += g[1] * np.kron(
-        [1 if i == 2 ** (6 - 2) else 0 for i in range(2**6)], np.kron(zero_n, dicke_1)
+        [1 if i == 2 ** (6 - 2) else 0 for i in range(2**6)], dicke_double
     )
-
+    
     # g[2]
     ref_state += g[2] * np.kron(
         [1 if i == 2 ** (6 - 3) else 0 for i in range(2**6)],
-        dicke_double,
+        np.kron(zero_n, dicke_1),
     )
 
     # J[0]
@@ -294,15 +288,14 @@ def test_foqcs_lcu_prep_optimal():
 
     # J[1]
     ref_state += J[1] * np.kron(
-        [1 if i == 2 ** (6 - 5) else 0 for i in range(2**6)], np.kron(zero_n, dicke_2NN)
+        [1 if i == 2 ** (6 - 5) else 0 for i in range(2**6)], dicke_2NN_double
     )
 
     # J[2]
     ref_state += J[2] * np.kron(
         [1 if i == 2 ** (6 - 6) else 0 for i in range(2**6)],
-        dicke_2NN_double,
+        np.kron(zero_n, dicke_2NN),
     )
-
 
     #comp_arr = []
     #comp_arr_ref = []

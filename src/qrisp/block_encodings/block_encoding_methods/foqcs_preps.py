@@ -195,18 +195,18 @@ def foqcs_prep_heisenberg_1D_optimal(
             f"J must contain exactly keys {sorted(req_keys)}. "
             f"Missing: {sorted(missing)}. Extra: {sorted(extra)}."
         )
-    
+
     extra_anc = 6 # Depends on the method and can be potentially decreased
 
     _g = np.zeros((3,), dtype="complex")
     _J = np.zeros((3,), dtype="complex")
 
     _g[0] = np.sqrt(g["X"] * L)
-    _g[1] = np.sqrt(g["Z"] * L)
-    _g[2] = np.sqrt(g["Y"] * L * -1j)
+    _g[1] = np.sqrt(g["Y"] * L * -1j)
+    _g[2] = np.sqrt(g["Z"] * L)
     _J[0] = np.sqrt(J["X"] * (L - 1))
-    _J[1] = np.sqrt(J["Z"] * (L - 1))
-    _J[2] = np.sqrt(J["Y"] * -(L - 1))
+    _J[1] = np.sqrt(J["Y"] * -(L - 1))
+    _J[2] = np.sqrt(J["Z"] * (L - 1))
 
     # Normalization for state preparation
     norm = np.linalg.norm(np.block([_g, _J]))
@@ -227,17 +227,17 @@ def foqcs_prep_heisenberg_1D_optimal(
     lh2 = extra_anc + (L * 2) - 1  # Last qubit second half
 
     # 3 specific CNOTs
-    cx(prep_qv[0], prep_qv[lh1])
-    cx(prep_qv[1], prep_qv[lh2])
-    cx(prep_qv[2], prep_qv[lh1])
+    cx(prep_qv[0], prep_qv[lh1]) # from gx
+    cx(prep_qv[1], prep_qv[lh1]) # from gy
+    cx(prep_qv[2], prep_qv[lh2]) # from gz
     # 2 parallel Gamma gates
     theta = 2 * np.acos(np.sqrt(1 / (L - 1 + 1)))
     _gamma_gate(prep_qv[lh1 - 1], prep_qv[lh1], theta)
     _gamma_gate(prep_qv[lh2 - 1], prep_qv[lh2], theta)
     # 3 specific CNOTs
-    cx(prep_qv[3], prep_qv[lh1 - 1])
-    cx(prep_qv[4], prep_qv[lh2 - 1])
-    cx(prep_qv[5], prep_qv[lh1 - 1])
+    cx(prep_qv[3], prep_qv[lh1 - 1]) # from Jx
+    cx(prep_qv[4], prep_qv[lh1 - 1]) # from Jy
+    cx(prep_qv[5], prep_qv[lh2 - 1]) # from Jz
     # 2 parallel delta gates
     theta_coeffs = []
     for i in range(1, L - 1):
@@ -245,22 +245,22 @@ def foqcs_prep_heisenberg_1D_optimal(
     _delta_gate(prep_qv[fh1:lh1], theta_coeffs)
     _delta_gate(prep_qv[fh2:lh2], theta_coeffs)
     # One spec CNOT
-    cx(prep_qv[3], prep_qv[5])
+    cx(prep_qv[3], prep_qv[4]) # from Jx to Jy
     # controlled CNOT ladder
-    with control(prep_qv[5]):
+    with control(prep_qv[4]): # from Jy
         _cx_ladder(prep_qv[fh1:lh1 + 1], L)
     # One spec CNOT
-    cx(prep_qv[3], prep_qv[5])
+    cx(prep_qv[3], prep_qv[4]) # from Jx to Jy
     # controlled CNOT ladder
-    with control(prep_qv[4]):
+    with control(prep_qv[5]): # from Jz
         _cx_ladder(prep_qv[fh2:], L)
     # One spec CNOT
-    cx(prep_qv[2], prep_qv[5])
+    cx(prep_qv[1], prep_qv[4]) # from gy to Jy
     # controlled Element-wise CNOT
-    with control(prep_qv[5]):
+    with control(prep_qv[4]): # from Jy
         cx(prep_qv[fh1:lh1 + 1], prep_qv[fh2:])
     # One spec CNOT
-    cx(prep_qv[2], prep_qv[5])
+    cx(prep_qv[1], prep_qv[4]) # from gy to Jy
 
 def foqcs_prep_placeholder( qv: QuantumVariable, coeffs: list, some_param: float ) -> None:
     """
