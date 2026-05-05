@@ -115,5 +115,5 @@
 
 /* Ensure the subtle zoom hover effect still works correctly */
 .slide img[src*="FRI_UL_logo"]:hover {
-    transform: scale(1.47); 
+    transform: scale(1.3); 
 }
