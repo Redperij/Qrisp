@@ -100,8 +100,55 @@ def _prep_psi(q_num):
     #         0.58938419-0.67645356j, 0.04926328-0.06230936j,  0.74225725-0.00355716j,
     #         0.62479001+0.83636103j
     #         ]
+    # Fix operands state for debugging  #q_num = 3
+    # psi = [0.57501513+0.26902124j, -0.16783319+0.96769323j, -0.15515405+0.02518714j,
+    #        -0.90288347-0.93298597j, 0.08905568-0.48063457j,  0.34150327+0.74670678j,
+    #        -0.06620886+0.96652259j, 0.76446858+0.88954485j
+    #         ]
     psi /= np.linalg.norm(psi)
     return psi
+
+def _get_qc_pos(qc):
+    return {
+        qb.identifier: pos
+        for pos, qb in enumerate(qc.qubits)
+    }
+
+
+def _basis_index_from_assignment(qc, assignment):
+    """
+    assignment maps original Qubit objects to 0/1 values.
+    The returned index follows qc.qubits order.
+    """
+    pos = _get_qc_pos(qc)
+    n = len(qc.qubits)
+
+    ind = 0
+    for qb, bit in assignment.items():
+        if bit:
+            ind += 2 ** (n - 1 - pos[qb.identifier])
+
+    return ind
+
+
+def _extract_zero_ancilla_operand_amps(qc, sv, operand, ancilla_qv):
+    res = []
+
+    for i in range(2 ** len(operand)):
+        assignment = {}
+
+        # Reference index convention: operand[j] carries bit j of i.
+        for j in range(len(operand)):
+            assignment[operand[j]] = (i >> j) & 1
+
+        # Zero ancillae.
+        for qb in ancilla_qv:
+            assignment[qb] = 0
+
+        ind = _basis_index_from_assignment(qc, assignment)
+        res.append(sv[ind])
+
+    return np.array(res)
 
 def test_foqcs_lcu_prep():
     # Initialize variables + their values
@@ -690,6 +737,7 @@ def test_block_encoding_from_foqcs_lcu_prep():
     assert np.allclose(res_ops, ref_state, atol=1e-6)
 
 def test_block_encoding_from_foqcs_lcu_spin_glass_prep():
+    from qrisp.simulator import statevector_sim
     L = 3
 
     # Physical Hamiltonian coefficients.
@@ -785,23 +833,42 @@ def test_block_encoding_from_foqcs_lcu_spin_glass_prep():
 
     operand, ancillas = main(be)
 
+    raw_qc = operand.qs.copy()
+    raw_sv = statevector_sim(raw_qc)
+
     qc = operand.qs.compile()
     sv = qc.statevector_array()
 
-    def bit_reverse(i: int, n: int) -> int:
-        return int(f"{i:0{n}b}"[::-1], 2)
-
+    # def bit_reverse(i: int, n: int) -> int:
+    #     return int(f"{i:0{n}b}"[::-1], 2)
     # Extract the operand amplitudes where all FOQCS-LCU ancillae are zero.
-    res_ops = []
-    for i in range(2**L):
-        qi = bit_reverse(i, L)
-        ind = qi << len(ancillas[0])
-        res_ops.append(sv[ind])
+    # res_ops = []
+    # res_raw_ops = []
+    # for i in range(2**L):
+    #     qi = bit_reverse(i, L)
+    #     ind = qi << len(ancillas[0])
+    #     res_ops.append(sv[ind])
+    #     res_raw_ops.append(raw_sv[ind])
+
+    res_raw_ops = _extract_zero_ancilla_operand_amps(
+        raw_qc,
+        raw_sv,
+        operand,
+        ancillas[0],
+    )
+
+    res_ops = _extract_zero_ancilla_operand_amps(
+        qc,
+        sv,
+        operand,
+        ancillas[0],
+    )
     
     H = _spin_glass_from_def(L, phys_g, phys_J) / alpha
     ref_state = H @ psi
 
     print(f"Ref state = {ref_state}")
+    print(f"Resulting raw operands = {res_raw_ops}")
     print(f"Resulting operands = {res_ops}")
 
     assert np.allclose(res_ops, ref_state, atol=1e-5)
@@ -1448,3 +1515,44 @@ def test_foqcs_operator_analysis():
     print(f"H: {comp}, res = {res}")
     
     assert True
+
+def test_compile_preserves_controlled_target_global_phase():
+    import numpy as np
+
+    from qrisp import QuantumVariable, control
+    from qrisp.core import h, rz, p
+    from qrisp.simulator import statevector_sim
+
+    theta = 0.73
+
+    qv = QuantumVariable(2)
+
+    # Put the control qubit into superposition.
+    h(qv[0])
+
+    # RZ(theta) P(-theta) = exp(-i theta/2) I
+    # That is only a global phase if it is NOT controlled.
+    # Under control, it becomes a relative phase on the qv[0] = 1 branch.
+    with control(qv[0]):
+        rz(theta, qv[1])
+        p(-theta, qv[1])
+
+    # Convert the relative phase on the control branch into amplitudes/probabilities.
+    h(qv[0])
+
+    raw_qc = qv.qs.copy()
+    raw_sv = statevector_sim(raw_qc)
+
+    compiled_qc = qv.qs.compile()
+    compiled_sv = compiled_qc.statevector_array()
+
+    # Compare up to one global phase.
+    idx = np.argmax(np.abs(raw_sv))
+    phase = compiled_sv[idx] / raw_sv[idx]
+    phase /= abs(phase)
+
+    print(f"Raw statevector:\n{raw_sv}")
+    print(f"Compiled statevector:\n{compiled_sv}")
+    print(f"Compiled statevector, phase corrected:\n{compiled_sv / phase}")
+
+    assert np.allclose(compiled_sv, phase * raw_sv, atol=1e-6)
