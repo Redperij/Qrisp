@@ -27,7 +27,7 @@ from jax.typing import ArrayLike
 
 # A small epsilon value for numerical stability.
 # Defined here for convenience, so it can be imported elsewhere.
-_EPSILON = jnp.sqrt(jnp.finfo(jnp.float64).eps)
+EPSILON = jnp.sqrt(jnp.finfo(jnp.float64).eps)
 
 
 def bin_rep(n, bits):
@@ -1393,6 +1393,7 @@ def check_if_fresh(qubits, qs, ignore_q_envs=True):
 
 def get_measurement_from_qc(qc, qubits, backend, shots=None):
     # Add classical registers for the measurement results to be stored in
+
     cl = []
     for i in range(len(qubits)):
         cl.append(qc.add_clbit())
@@ -1402,7 +1403,7 @@ def get_measurement_from_qc(qc, qubits, backend, shots=None):
         qc.measure(qubits[i], cl[i])
 
     # Execute circuit
-    counts = backend.run(qc, shots)
+    counts = backend.run(qc, shots=shots)
 
     # Remove other measurements outcomes from counts dic
     new_counts_dic = {}
