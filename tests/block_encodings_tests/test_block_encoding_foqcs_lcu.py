@@ -20,7 +20,14 @@ import numpy as np
 import pytest
 from qrisp.block_encodings import BlockEncoding
 from qrisp import QuantumVariable, QuantumFloat, terminal_sampling, multi_measurement
-from qrisp.block_encodings import foqcs_prep_heisenberg, is_operator_foqcs_compatible, foqcs_analyze_operator, foqcs_prep_spin_glass
+from qrisp.block_encodings import (
+  foqcs_prep_heisenberg,
+  is_operator_foqcs_compatible,
+  foqcs_analyze_operator_spin_glass,
+  foqcs_analyze_operator_heisenberg,
+  foqcs_analyze_operator,
+  foqcs_prep_spin_glass
+)
 from functools import partial
 from qrisp.operators import X, Y, Z
 from qrisp.alg_primitives.unbalanced_w_state import unbalanced_W_state
@@ -1592,11 +1599,11 @@ def test_block_encoding_foqcs_lcu_negation(H1, H2):
 #### Operator analysis tests ##############################################################################
 ###########################################################################################################
 
-def test_foqcs_operator_analysis_failures():
+def test_foqcs_operator_analysis_spin_glass_failures():
     def empty_must_fail():
         O = 0 * X(0)
         with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O)
+            foqcs_analyze_operator_spin_glass(O)
 
         print(exc_info.value)
         assert f"empty or constant operator: {O}" in str(exc_info.value)
@@ -1604,7 +1611,7 @@ def test_foqcs_operator_analysis_failures():
     def constant_must_fail():
         O = X(0) * X(0)
         with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O)
+            foqcs_analyze_operator_spin_glass(O)
 
         print(exc_info.value)
         assert f"empty or constant operator: {O}" in str(exc_info.value)
@@ -1612,7 +1619,7 @@ def test_foqcs_operator_analysis_failures():
     def bad_length_must_fail():
         O = X(0) + X(1) + X(2) + X(3) + X(4)
         with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O, L=2)
+            foqcs_analyze_operator_spin_glass(O, L=2)
 
         print(exc_info.value)
         assert f"Received L = {2}" in str(exc_info.value)
@@ -1620,7 +1627,7 @@ def test_foqcs_operator_analysis_failures():
     def const_in_op_must_fail():
         O = Y(0) + (0.18 + 0.5j) * Z(1) * Z(3) + X(0) * X(0)
         with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O)
+            foqcs_analyze_operator_spin_glass(O)
 
         print(exc_info.value)
         assert f"FOQCS-LCU does not support constant/identity terms" in str(exc_info.value)
@@ -1628,7 +1635,7 @@ def test_foqcs_operator_analysis_failures():
     def cross_axis_couple_must_fail():
         O = X(0) * Y(3) + X(0) * X(1) + Z(0)
         with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O)
+            foqcs_analyze_operator_spin_glass(O)
 
         print(exc_info.value)
         assert f"FOQCS-LCU supports only same-axis couplings, but received: X({0}) * Y({3})" in str(exc_info.value)
@@ -1636,7 +1643,7 @@ def test_foqcs_operator_analysis_failures():
     def three_body_couple_must_fail():
         O = X(0) * X(1) + Z(0) + Y(0) * Y(1) * Y(2)
         with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O)
+            foqcs_analyze_operator_spin_glass(O)
 
         print(exc_info.value)
         assert f"FOQCS-LCU supports only one and two-body interactions" in str(exc_info.value)
@@ -1648,6 +1655,102 @@ def test_foqcs_operator_analysis_failures():
     const_in_op_must_fail()
     cross_axis_couple_must_fail()
     three_body_couple_must_fail()
+
+def test_foqcs_operator_analysis_heisenberg_failures():
+    def empty_must_fail():
+        O = 0 * X(0)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator_heisenberg(O)
+
+        print(exc_info.value)
+        assert f"empty or constant operator: {O}" in str(exc_info.value)
+
+    def constant_must_fail():
+        O = X(0) * X(0)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator_heisenberg(O)
+
+        print(exc_info.value)
+        assert f"empty or constant operator: {O}" in str(exc_info.value)
+
+    def bad_length_must_fail():
+        O = X(0) + X(1) + X(2) + X(3) + X(4)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator_heisenberg(O, L=2)
+
+        print(exc_info.value)
+        assert f"Received L = {2}" in str(exc_info.value)
+
+    def const_in_op_must_fail():
+        O = Y(0) + (0.18 + 0.5j) * Z(1) * Z(2) + X(0) * X(0)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator_heisenberg(O)
+
+        print(exc_info.value)
+        assert "FOQCS-LCU does not support constant/identity terms" in str(exc_info.value)
+
+    def cross_axis_couple_must_fail():
+        O = X(0) * Y(1) + X(0) + X(1)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator_heisenberg(O)
+
+        print(exc_info.value)
+        assert f"FOQCS-LCU supports only same-axis couplings, but received: X({0}) * Y({1})" in str(exc_info.value)
+
+    def three_body_couple_must_fail():
+        O = X(0) * X(1) + Z(0) + Y(0) * Y(1) * Y(2)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator_heisenberg(O)
+
+        print(exc_info.value)
+        assert "FOQCS-LCU supports only one and two-body interactions" in str(exc_info.value)
+
+    def non_uniform_local_fields_must_fail():
+        O = 0.5 * X(0) + 0.7 * X(1)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator_heisenberg(O, L=2)
+
+        print(exc_info.value)
+        assert "non-uniform local interactions" in str(exc_info.value)
+
+    def long_range_coupling_must_fail():
+        O = X(0) * X(2)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator_heisenberg(O, L=3)
+
+        print(exc_info.value)
+        assert "not NN interactions present" in str(exc_info.value)
+
+    def non_uniform_nn_couplings_must_fail():
+        O = 0.5 * X(0) * X(1) + 0.9 * X(1) * X(2)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator_heisenberg(O, L=3)
+
+        print(exc_info.value)
+        assert "non-uniform NN interactions" in str(exc_info.value)
+
+    def missing_nn_couplings_must_fail():
+        # Zeroes matter for the Heisenberg specialization.
+        # For L=3, X0X1 exists but X1X2 is implicitly zero,
+        # so NN couplings are [1, 0] and therefore non-uniform.
+        O = X(0) * X(1)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator_heisenberg(O, L=3)
+
+        print(exc_info.value)
+        assert "non-uniform NN interactions" in str(exc_info.value)
+
+    print("\n")
+    empty_must_fail()
+    constant_must_fail()
+    bad_length_must_fail()
+    const_in_op_must_fail()
+    cross_axis_couple_must_fail()
+    three_body_couple_must_fail()
+    non_uniform_local_fields_must_fail()
+    long_range_coupling_must_fail()
+    non_uniform_nn_couplings_must_fail()
+    missing_nn_couplings_must_fail()
 
 def test_foqcs_operator_analysis():
     def make_heisenberg_pass_cases():
@@ -1735,115 +1838,3 @@ def test_foqcs_operator_analysis():
         res = is_operator_foqcs_compatible(O)
         assert res, f"Passing operator failed analysis: {O} "
         assert res["method"] == "spin_glass", name
-
-###########################################################################################################
-#### Benchmarking #########################################################################################
-###########################################################################################################
-
-def test_block_encoding_from_foqcs_lcu_bench_lcu():
-    from qiskit import transpile
-    # Test FOQCS-LCU resources against normal LCU
-    # Initialize variables + their values
-    L = 4
-    g = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
-    J = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
-
-    # Fix coefficients for debugging
-    # g = np.array([0.80054361+0.j,  0.50905072+0.j, -0.89045545+0.j])
-    # J = np.array([0.98167489+0.j, -0.32435597+0.j,  0.42262456+0.j])
-
-    # Normalize
-    norm = np.linalg.norm(np.block([g, J]))
-    g /= norm
-    J /= norm
-
-    # Actual parameters for the PREP
-    _g = np.zeros((3,), dtype="complex")
-    _J = np.zeros((3,), dtype="complex")
-    for i in range(3):
-        _g[i] = np.sqrt(g[i] * L)
-        _J[i] = np.sqrt(J[i] * (L - 1))
-    # Correction for XZ = -iY
-    _J[1] = 1j * _J[1]
-    _g[1] = (1 - 1j) * _g[1] / np.sqrt(2)
-    # Normalization for block encoding
-    norm = np.linalg.norm(np.block([_g, _J]))
-
-    # Construct dictionary input expected by foqcs_prep_heisenberg()
-    heis_g = {"X": g[0], "Y": g[1], "Z": g[2]}
-    heis_J = {"X": J[0], "Y": J[1], "Z": J[2]}
-
-    # Create partial PREP_R and PREP_L^dagger functions to be used by FOQCS-LCU
-    prep = partial(
-        foqcs_prep_heisenberg,
-        L=L,
-        g=heis_g,
-        J=heis_J,
-    )
-    unprep = partial(
-        foqcs_prep_heisenberg,
-        L=L,
-        g=heis_g,
-        J=heis_J,
-        conjugate=True
-    )
-
-    be1 = BlockEncoding.from_foqcs_lcu_prep(prep=prep, num_q_ops=L, unprep=unprep, norm=norm ** 2)
-
-    H = sum(
-        heis_g["X"] * X(i)
-        + heis_g["Y"] * Y(i)
-        + heis_g["Z"] * Z(i)
-        for i in range(L)
-    )
-
-    H += sum(
-        heis_J["X"] * X(i) * X(i + 1)
-        + heis_J["Y"] * Y(i) * Y(i + 1)
-        + heis_J["Z"] * Z(i) * Z(i + 1)
-        for i in range(L - 1)
-    )
-
-    be2 = BlockEncoding.from_operator(H)
-
-    psi = _prep_psi(L)
-    qv = QuantumVariable(4)
-    qv.init_state(psi, method="qswitch")
-
-    res1 = be1.resources(qv)
-    res2 = be2.resources(qv)
-
-    print(f"Resources comp\nFOQCS-LCU:\n{res1}\nLCU:\n{res2}")
-
-    be1.apply(qv)
-    qc1 = qv.qs.compile().to_qiskit()
-    be2.apply(qv)
-    qc2 = qv.qs.compile().to_qiskit()
-
-    tqc1 = transpile(
-                qc1,
-                basis_gates=["rz", "sx", "x", "cx"],
-                optimization_level=0,
-            )
-
-    tqc2 = transpile(
-                qc2,
-                basis_gates=["rz", "sx", "x", "cx"],
-                optimization_level=0,
-            )
-
-    counts1 = tqc1.count_ops()
-    counts2 = tqc2.count_ops()
-
-    print("FOQCS-LCU")
-    print("CX count:", counts1.get("cx", 0))
-    print("Counts:", counts1)
-    print("Depth:", tqc1.depth())
-    print("Qubits:", tqc1.num_qubits)
-    print("LCU")
-    print("CX count:", counts2.get("cx", 0))
-    print("Counts:", counts2)
-    print("Depth:", tqc2.depth())
-    print("Qubits:", tqc2.num_qubits)
-
-    assert True
