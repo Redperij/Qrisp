@@ -18,7 +18,6 @@
 
 import numpy as np
 import pytest
-from qrisp.core import x
 from qrisp.block_encodings import BlockEncoding
 from qrisp import QuantumVariable, QuantumFloat, terminal_sampling, multi_measurement
 from qrisp.block_encodings import foqcs_prep_heisenberg, is_operator_foqcs_compatible, foqcs_analyze_operator, foqcs_prep_spin_glass
@@ -1589,286 +1588,161 @@ def test_block_encoding_foqcs_lcu_negation(H1, H2):
     res_be_neg = main(BE_neg)
     _compare_results(res_be2, res_be_neg, n)
 
+###########################################################################################################
+#### Operator analysis tests ##############################################################################
+###########################################################################################################
 
+def test_foqcs_operator_analysis_failures():
+    def empty_must_fail():
+        O = 0 * X(0)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator(O)
 
-
-
-
-# Some weird shenanigans. May be exposing some compiler bug, but it is not verified.
-
-def test_foqcs_lcu_add():
-    L = 2
-
-    foqcs_be = BlockEncoding.from_foqcs_lcu_operator(Z(0) * Z(1), L)
-
-    def identity(qv):
-        pass
-
-    id_be = BlockEncoding.from_lcu(
-        np.array([1.0]),
-        [identity],
-    )
-
-    be = foqcs_be + id_be
-
-    psi = np.array(
-        [0.31 + 0.17j, -0.42 + 0.53j, 0.26 - 0.61j, -0.18 - 0.22j],
-        dtype=complex,
-    )
-    psi /= np.linalg.norm(psi)
-
-    qv = QuantumVariable(L)
-    qv.init_state(psi, method="qswitch")
-    ancillas = be.apply(qv)
-
-    qc = qv.qs.compile()
-    sv = qc.statevector_array()
-
-    pos = {qb.identifier: i for i, qb in enumerate(qc.qubits)}
-    res = []
-
-    for i in range(2 ** L):
-        ind = 0
-
-        for j in range(L):
-            if (i >> j) & 1:
-                ind += 2 ** (len(qc.qubits) - 1 - pos[qv[j].identifier])
-
-        for anc in ancillas:
-            for qb in anc:
-                assert qb.identifier in pos
-
-        res.append(sv[ind])
-
-    sz = np.array([[1, 0], [0, -1]], dtype=complex)
-    I = np.eye(2, dtype=complex)
-
-    H = np.kron(sz, sz) + np.eye(2 ** L, dtype=complex)
-    ref = (H / be.alpha) @ psi
-
-    print("foqcs_be.alpha", foqcs_be.alpha)
-    print("id_be.alpha", id_be.alpha)
-    print("combined alpha", be.alpha)
-    print(f"Addition result:\n{res}")
-    print(f"Reference:\n{ref}")
-
-    from qrisp.simulator import statevector_sim
-
-    raw_qc = qv.qs.copy()
-    raw_sv = statevector_sim(raw_qc)
-
-    qc = qv.qs.compile()
-    sv = qc.statevector_array()
-
-    def extract(qc, sv):
-        pos = {qb.identifier: i for i, qb in enumerate(qc.qubits)}
-        out = []
-
-        for i in range(2 ** L):
-            ind = 0
-
-            for j in range(L):
-                if (i >> j) & 1:
-                    ind += 2 ** (len(qc.qubits) - 1 - pos[qv[j].identifier])
-
-            for anc in ancillas:
-                for qb in anc:
-                    assert qb.identifier in pos
-
-            out.append(sv[ind])
-
-        return np.array(out)
-
-    raw_res = extract(raw_qc, raw_sv)
-    compiled_res = extract(qc, sv)
-
-    print(f"Raw addition result:\n{raw_res}")
-    print(f"Compiled addition result:\n{compiled_res}")
-    print(f"Reference:\n{ref}")
-
-    assert np.allclose(raw_res, ref, atol=1e-5)
-    assert np.allclose(compiled_res, ref, atol=1e-5)
-
-    assert np.isclose(foqcs_be.alpha, 1)
-    assert np.isclose(id_be.alpha, 1)
-    assert np.isclose(be.alpha, 2)
-    assert np.allclose(res, ref, atol=1e-5)
-
-def test_compile_preserves_foqcs_lcu_addition_with_identity():
-    from qrisp.simulator import statevector_sim
-
-    L = 2
-
-    # FOQCS-LCU block encoding of Z(0)Z(1).
-    foqcs_be = BlockEncoding.from_foqcs_lcu_operator(Z(0) * Z(1), L)
-
-    # Lightweight no-op block encoding of I via from_lcu.
-    def identity(qv):
-        pass
-
-    id_be = BlockEncoding.from_lcu(
-        np.array([1.0]),
-        [identity],
-    )
-
-    # Encodes (Z(0)Z(1) + I) / 2.
-    be = foqcs_be + id_be
-
-    psi = np.array(
-        [0.31 + 0.17j, -0.42 + 0.53j, 0.26 - 0.61j, -0.18 - 0.22j],
-        dtype=complex,
-    )
-    psi /= np.linalg.norm(psi)
-
-    qv = QuantumVariable(L)
-    qv.init_state(psi, method="qswitch")
-    ancillas = be.apply(qv)
-
-    def extract_zero_ancilla_operands(qc, sv):
-        pos = {qb.identifier: i for i, qb in enumerate(qc.qubits)}
-        out = []
-
-        for i in range(2 ** L):
-            ind = 0
-
-            for j in range(L):
-                if (i >> j) & 1:
-                    ind += 2 ** (len(qc.qubits) - 1 - pos[qv[j].identifier])
-
-            for anc in ancillas:
-                for qb in anc:
-                    assert qb.identifier in pos
-
-            out.append(sv[ind])
-
-        return np.array(out)
-
-    raw_qc = qv.qs.copy()
-    raw_res = extract_zero_ancilla_operands(raw_qc, statevector_sim(raw_qc))
-
-    compiled_qc = qv.qs.compile()
-    compiled_res = extract_zero_ancilla_operands(
-        compiled_qc,
-        compiled_qc.statevector_array(),
-    )
-
-    # (ZZ + I) / 2 is the even-parity projector:
-    # |00>, |11> survive; |01>, |10> vanish.
-    ref = np.array([psi[0], 0, 0, psi[3]], dtype=complex)
-
-    print("foqcs_be.alpha", foqcs_be.alpha)
-    print("id_be.alpha", id_be.alpha)
-    print("combined alpha", be.alpha)
-    print(f"Raw result:\n{raw_res}")
-    print(f"Compiled result:\n{compiled_res}")
-    print(f"Reference:\n{ref}")
-
-    assert np.isclose(foqcs_be.alpha, 1)
-    assert np.isclose(id_be.alpha, 1)
-    assert np.isclose(be.alpha, 2)
-
-    # This proves the arithmetic construction itself is correct.
-    assert np.allclose(raw_res, ref, atol=1e-5)
-
-    # This is the compiler regression check.
-    assert np.allclose(compiled_res, raw_res, atol=1e-5)
-
+        print(exc_info.value)
+        assert f"empty or constant operator: {O}" in str(exc_info.value)
     
+    def constant_must_fail():
+        O = X(0) * X(0)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator(O)
 
+        print(exc_info.value)
+        assert f"empty or constant operator: {O}" in str(exc_info.value)
+    
+    def bad_length_must_fail():
+        O = X(0) + X(1) + X(2) + X(3) + X(4)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator(O, L=2)
 
+        print(exc_info.value)
+        assert f"Received L = {2}" in str(exc_info.value)
 
-def test_compile_preserves_addition_of_two_term_lcu_with_identity():
-    from qrisp.simulator import statevector_sim
-    from qrisp.core import z as q_z
+    def const_in_op_must_fail():
+        O = Y(0) + (0.18 + 0.5j) * Z(1) * Z(3) + X(0) * X(0)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator(O)
 
-    L = 2
+        print(exc_info.value)
+        assert f"FOQCS-LCU does not support constant/identity terms" in str(exc_info.value)
+    
+    def cross_axis_couple_must_fail():
+        O = X(0) * Y(3) + X(0) * X(1) + Z(0)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator(O)
 
-    # Two-term LCU block encoding of ZZ + I.
-    def zz(qv):
-        q_z(qv[0])
-        q_z(qv[1])
+        print(exc_info.value)
+        assert f"FOQCS-LCU supports only same-axis couplings, but received: X({0}) * Y({3})" in str(exc_info.value)
 
-    def identity(qv):
-        pass
+    def three_body_couple_must_fail():
+        O = X(0) * X(1) + Z(0) + Y(0) * Y(1) * Y(2)
+        with pytest.raises(ValueError) as exc_info:
+            foqcs_analyze_operator(O)
 
-    lcu_be = BlockEncoding.from_lcu(
-        np.array([1.0, 1.0]),
-        [zz, identity],
-    )
+        print(exc_info.value)
+        assert f"FOQCS-LCU supports only one and two-body interactions" in str(exc_info.value)
 
-    id_be = BlockEncoding.from_lcu(
-        np.array([1.0]),
-        [identity],
-    )
+    print("\n")
+    empty_must_fail()
+    constant_must_fail()
+    bad_length_must_fail()
+    const_in_op_must_fail()
+    cross_axis_couple_must_fail()
+    three_body_couple_must_fail()
 
-    # Encodes ((ZZ + I) + I) / 3 = (ZZ + 2I) / 3.
-    be = lcu_be + id_be
+def test_foqcs_operator_analysis():
+    def make_heisenberg_pass_cases():
+        cases = {}
+        # Full uniform nearest-neighbor XYZ/Heisenberg chain with 2 qubits.
+        cases["L2_full_uniform"] = (
+            X(0) + X(1)
+            + 0.5 * Y(0) + 0.5 * Y(1)
+            - 0.3 * Z(0) - 0.3 * Z(1)
+            + 0.7 * X(0) * X(1)
+            - 0.2 * Y(0) * Y(1)
+            + 0.4 * Z(0) * Z(1)
+        )
+        # Full uniform nearest-neighbor XYZ/Heisenberg chain with 4 qubits.
+        H = 0
+        L = 4
+        H += 1.0 * X(0)
+        H += 0.5 * Y(0)
+        H += -0.3 * Z(0)
+        for i in range(1, L):
+            H += 1.0 * X(i)
+            H += 0.5 * Y(i)
+            H += -0.3 * Z(i)
+            H += 0.7 * X(i - 1) * X(i)
+            H += -0.2 * Y(i - 1) * Y(i)
+            H += 0.4 * Z(i - 1) * Z(i)
+        cases["L4_full_uniform"] = H
+        # Uniform local X field only.
+        cases["uniform_X_field_only"] = X(0) + X(1) + X(2) + X(3)
+        # Uniform ZZ NN coupling only.
+        cases["uniform_ZZ_coupling_only"] = (
+            Z(0) * Z(1)
+            + Z(1) * Z(2)
+            + Z(2) * Z(3)
+        )
+        # Zero coefficient in one Pauli family.
+        cases["uniform_with_some_zero_families"] = (
+            0.8 * X(0) + 0.8 * X(1) + 0.8 * X(2)
+            + 0.0 * Y(0) + 0.0 * Y(1) + 0.0 * Y(2)
+            + 0.2 * Z(0) * Z(1)
+            + 0.2 * Z(1) * Z(2)
+        )
+        return cases
 
-    psi = np.array(
-        [0.31 + 0.17j, -0.42 + 0.53j, 0.26 - 0.61j, -0.18 - 0.22j],
-        dtype=complex,
-    )
-    psi /= np.linalg.norm(psi)
+    def make_heisenberg_fail_cases():
+        cases = {}
+        # Non-uniform local fields
+        cases["non_uniform_local_X"] = (
+            1.0 * X(0)
+            + 0.5 * X(1)
+            + 1.0 * X(2)
+        )
+        # Local fields on different sites/axes only.
+        cases["position_dependent_local_fields"] = (
+            X(0)
+            + 0.5 * Y(1)
+            + 0.2 * Z(0) * Z(1)
+        )
+        # Long-range same-axis coupling
+        cases["long_range_XX"] = X(0) * X(2)
+        # Non-uniform nearest-neighbor couplings
+        cases["non_uniform_NN_ZZ"] = (
+            0.2 * Z(0) * Z(1)
+            + 0.7 * Z(1) * Z(2)
+        )
+        # Missing one NN bond while L is inferred as 4 because of X(3).
+        cases["missing_NN_bonds_due_to_L"] = (
+            X(3)
+            + 0.2 * Z(0) * Z(1)
+        )
+        # Same-axis arbitrary pair couplings.
+        cases["sparse_spin_glass_pairs"] = (
+            0.3 * X(0) * X(3)
+            - 0.4 * Y(1) * Y(2)
+            + 0.9 * Z(0)
+        )
+        return cases
 
-    qv = QuantumVariable(L)
-    qv.init_state(psi, method="qswitch")
-    ancillas = be.apply(qv)
+    for name, O in make_heisenberg_pass_cases().items():
+        res = is_operator_foqcs_compatible(O)
+        assert res, f"Passing operator failed analysis: {O} "
+        assert res["method"] == "heisenberg", name
 
-    def extract_zero_ancilla_operands(qc, sv):
-        pos = {qb.identifier: i for i, qb in enumerate(qc.qubits)}
-        out = []
+    for name, O in make_heisenberg_fail_cases().items():
+        res = is_operator_foqcs_compatible(O)
+        assert res, f"Passing operator failed analysis: {O} "
+        assert res["method"] == "spin_glass", name
 
-        for i in range(2 ** L):
-            ind = 0
-
-            for j in range(L):
-                if (i >> j) & 1:
-                    ind += 2 ** (len(qc.qubits) - 1 - pos[qv[j].identifier])
-
-            for anc in ancillas:
-                for qb in anc:
-                    assert qb.identifier in pos
-
-            out.append(sv[ind])
-
-        return np.array(out)
-
-    raw_qc = qv.qs.copy()
-    raw_res = extract_zero_ancilla_operands(raw_qc, statevector_sim(raw_qc))
-
-    compiled_qc = qv.qs.compile()
-    compiled_res = extract_zero_ancilla_operands(
-        compiled_qc,
-        compiled_qc.statevector_array(),
-    )
-
-    # ZZ = diag(1, -1, -1, 1), so:
-    # (ZZ + 2I) / 3 = diag(1, 1/3, 1/3, 1).
-    ref = np.array(
-        [psi[0], psi[1] / 3, psi[2] / 3, psi[3]],
-        dtype=complex,
-    )
-
-    print("lcu_be.alpha", lcu_be.alpha)
-    print("id_be.alpha", id_be.alpha)
-    print("combined alpha", be.alpha)
-    print(f"Raw result:\n{raw_res}")
-    print(f"Compiled result:\n{compiled_res}")
-    print(f"Reference:\n{ref}")
-
-    assert np.isclose(lcu_be.alpha, 2)
-    assert np.isclose(id_be.alpha, 1)
-    assert np.isclose(be.alpha, 3)
-
-    # Arithmetic construction itself.
-    assert np.allclose(raw_res, ref, atol=1e-6)
-
-    # Compiler preservation.
-    assert np.allclose(compiled_res, raw_res, atol=1e-6)
+###########################################################################################################
+#### Benchmarking #########################################################################################
+###########################################################################################################
 
 def test_block_encoding_from_foqcs_lcu_bench_lcu():
     from qiskit import transpile
-    # Test FOQCS-LCU resources agains normal LCU
+    # Test FOQCS-LCU resources against normal LCU
     # Initialize variables + their values
     L = 4
     g = np.array(np.random.uniform(-1, 1, 3), dtype="complex")
@@ -1973,151 +1847,3 @@ def test_block_encoding_from_foqcs_lcu_bench_lcu():
     print("Qubits:", tqc2.num_qubits)
 
     assert True
-
-###########################################################################################################
-#### Operator analysis tests ##############################################################################
-###########################################################################################################
-
-def test_foqcs_operator_analysis_failures():
-    def empty_must_fail():
-        O = 0 * X(0)
-        with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O)
-
-        print(exc_info.value)
-        assert f"empty or constant operator: {O}" in str(exc_info.value)
-    
-    def constant_must_fail():
-        O = X(0) * X(0)
-        with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O)
-
-        print(exc_info.value)
-        assert f"empty or constant operator: {O}" in str(exc_info.value)
-    
-    def bad_length_must_fail():
-        O = X(0) + X(1) + X(2) + X(3) + X(4)
-        with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O, L=2)
-
-        print(exc_info.value)
-        assert f"Received L = {2}" in str(exc_info.value)
-
-    def const_in_op_must_fail():
-        O = Y(0) + (0.18 + 0.5j) * Z(1) * Z(3) + X(0) * X(0)
-        with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O)
-
-        print(exc_info.value)
-        assert f"FOQCS-LCU does not support constant/identity terms" in str(exc_info.value)
-    
-    def cross_axis_couple_must_fail():
-        O = X(0) * Y(3) + X(0) * X(1) + Z(0)
-        with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O)
-
-        print(exc_info.value)
-        assert f"FOQCS-LCU supports only same-axis couplings, but received: X({0}) * Y({3})" in str(exc_info.value)
-
-    def three_body_couple_must_fail():
-        O = X(0) * X(1) + Z(0) + Y(0) * Y(1) * Y(2)
-        with pytest.raises(ValueError) as exc_info:
-            foqcs_analyze_operator(O)
-
-        print(exc_info.value)
-        assert f"FOQCS-LCU supports only one and two-body interactions" in str(exc_info.value)
-
-    print("\n")
-    empty_must_fail()
-    constant_must_fail()
-    bad_length_must_fail()
-    const_in_op_must_fail()
-    cross_axis_couple_must_fail()
-    three_body_couple_must_fail()
-
-def test_foqcs_operator_heisenberg():
-    def make_heisenberg_pass_cases():
-        cases = {}
-        # Full uniform nearest-neighbor XYZ/Heisenberg chain with 2 qubits.
-        cases["L2_full_uniform"] = (
-            X(0) + X(1)
-            + 0.5 * Y(0) + 0.5 * Y(1)
-            - 0.3 * Z(0) - 0.3 * Z(1)
-            + 0.7 * X(0) * X(1)
-            - 0.2 * Y(0) * Y(1)
-            + 0.4 * Z(0) * Z(1)
-        )
-        # Full uniform nearest-neighbor XYZ/Heisenberg chain with 4 qubits.
-        H = 0
-        L = 4
-        H += 1.0 * X(0)
-        H += 0.5 * Y(0)
-        H += -0.3 * Z(0)
-        for i in range(1, L):
-            H += 1.0 * X(i)
-            H += 0.5 * Y(i)
-            H += -0.3 * Z(i)
-            H += 0.7 * X(i - 1) * X(i)
-            H += -0.2 * Y(i - 1) * Y(i)
-            H += 0.4 * Z(i - 1) * Z(i)
-        cases["L4_full_uniform"] = H
-        # Uniform local X field only.
-        cases["uniform_X_field_only"] = X(0) + X(1) + X(2) + X(3)
-        # Uniform ZZ NN coupling only.
-        cases["uniform_ZZ_coupling_only"] = (
-            Z(0) * Z(1)
-            + Z(1) * Z(2)
-            + Z(2) * Z(3)
-        )
-        # Zero coefficient in one Pauli family.
-        cases["uniform_with_some_zero_families"] = (
-            0.8 * X(0) + 0.8 * X(1) + 0.8 * X(2)
-            + 0.0 * Y(0) + 0.0 * Y(1) + 0.0 * Y(2)
-            + 0.2 * Z(0) * Z(1)
-            + 0.2 * Z(1) * Z(2)
-        )
-        return cases
-
-    def make_heisenberg_fail_cases():
-        cases = {}
-        # Non-uniform local fields
-        cases["non_uniform_local_X"] = (
-            1.0 * X(0)
-            + 0.5 * X(1)
-            + 1.0 * X(2)
-        )
-        # Local fields on different sites/axes only.
-        cases["position_dependent_local_fields"] = (
-            X(0)
-            + 0.5 * Y(1)
-            + 0.2 * Z(0) * Z(1)
-        )
-        # Long-range same-axis coupling
-        cases["long_range_XX"] = X(0) * X(2)
-        # Non-uniform nearest-neighbor couplings
-        cases["non_uniform_NN_ZZ"] = (
-            0.2 * Z(0) * Z(1)
-            + 0.7 * Z(1) * Z(2)
-        )
-        # Missing one NN bond while L is inferred as 4 because of X(3).
-        cases["missing_NN_bonds_due_to_L"] = (
-            X(3)
-            + 0.2 * Z(0) * Z(1)
-        )
-        # Same-axis arbitrary pair couplings.
-        cases["sparse_spin_glass_pairs"] = (
-            0.3 * X(0) * X(3)
-            - 0.4 * Y(1) * Y(2)
-            + 0.9 * Z(0)
-        )
-        return cases
-
-    for name, O in make_heisenberg_pass_cases().items():
-        check, res = is_operator_foqcs_compatible(O)
-        assert check, f"Passing operator failed analysis: {O} "
-        assert res["method"] == "heisenberg", name
-
-    for name, O in make_heisenberg_fail_cases().items():
-        check, res = is_operator_foqcs_compatible(O)
-        assert check, f"Passing operator failed analysis: {O} "
-        assert res["method"] == "spin_glass", name

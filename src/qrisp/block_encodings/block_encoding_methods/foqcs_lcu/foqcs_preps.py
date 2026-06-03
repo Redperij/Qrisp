@@ -18,14 +18,12 @@
 
 import numpy as np
 from qrisp.core import QuantumVariable, Qubit
-from qrisp.core.gate_application_functions import x, cx, ry, p, h, rz
+from qrisp.core.gate_application_functions import cx, ry, p, h, rz
 from qrisp.alg_primitives.unbalanced_w_state import unbalanced_W_state
-from qrisp.alg_primitives.dicke_state_prep import dicke_state
 from qrisp.environments import control
 from collections.abc import Sequence
 from functools import partial
 from typing import Any
-from qrisp.operators import QubitOperator
 
 _FOQCS_SPIN_GLASS_TOL = 1e-12
 
@@ -37,6 +35,11 @@ def foqcs_prep_heisenberg(
     conjugate: bool = False
 ) -> None:
     r"""
+
+    FOQCS-LCU state preparation, based on the application of the same name in https://arxiv.org/pdf/2507.20887.
+    Implements the FOQCS-LCU PREP oracle for the Heisenberg Hamiltonian by preparing selector amplitudes for local X/Y/Z fields and nearest-neighbor XX/YY/ZZ couplings, then mapping them into the two FOQCS activation registers using Dicke-state and CNOT-ladder structures.
+    
+    
     Parameters
     ----------
     prep_qv : QuantumVariable | Sequence[Qubit]
@@ -72,6 +75,11 @@ def foqcs_prep_heisenberg(
         If ``g`` or ``J`` has length not equal to 3.
 
     """
+
+    # Ref: Heisenberg Hamiltonian with local fields and nearest-neighbor
+    # XX/YY/ZZ couplings is Eq. (50).
+    # Ref: Table II maps each Pauli term to FOQCS-LCU coefficient-state pairs.
+
     # Check that received g and J dictionaries exactly contain the expected entries.
     req_keys = {"X", "Y", "Z"}
 
@@ -94,6 +102,8 @@ def foqcs_prep_heisenberg(
             f"Missing: {sorted(missing)}. Extra: {sorted(extra)}."
         )
 
+    # Ref: Fig. 5 shows that the Heisenberg PREP oracle uses 2L + 6 ancillae;
+    # the first 6 ancillae select gx, gy, gz, Jx, Jy, Jz.
     extra_anc = 6 # Depends on the method and can be potentially decreased
 
     _g = np.zeros((3,), dtype="complex")
@@ -111,45 +121,62 @@ def foqcs_prep_heisenberg(
         _J = np.conj(_J)
 
     # SUBPREP
+    # Ref: Eq. (56) gives the 6-entry selector state alpha used in Fig. 6.
     unbalanced_W_state(prep_qv[:extra_anc], np.block([_g, _J]))
     
     # PREP
+    # Ref: Fig. 5 and Fig. 6 split the FOQCS ancillae into two L-qubit
+    # activation registers: one for X activation and one for Z activation.
     fh1 = extra_anc                # First qubit first half
     lh1 = extra_anc + L - 1        # Last qubit first half
     fh2 = extra_anc + L            # First qubit second half
     lh2 = extra_anc + (L * 2) - 1  # Last qubit second half
 
     # 3 specific CNOTs
+    # Ref: Table II: gx maps to |2^l>|0>, gy maps to |2^l>|2^l>,
+    # and gz maps to |0>|2^l>.
     cx(prep_qv[0], prep_qv[lh1]) # from gx
     cx(prep_qv[1], prep_qv[lh1]) # from gy
     cx(prep_qv[2], prep_qv[lh2]) # from gz
     # 2 parallel Gamma gates
+    # Ref: Fig. 2(a) defines Gamma(theta); Fig. 6 uses Gamma(theta_{n-1})
+    # as part of the compact Heisenberg PREP circuit.
     theta = 2 * np.acos(np.sqrt(1 / (L - 1 + 1)))
     _gamma_gate(prep_qv[lh1 - 1], prep_qv[lh1], theta)
     _gamma_gate(prep_qv[lh2 - 1], prep_qv[lh2], theta)
     # 3 specific CNOTs
+    # Ref: Table II: Jx/Jy/Jz nearest-neighbor terms map to two-excitation
+    # patterns |2^l + 2^{l+1}> in the relevant activation register(s).
     cx(prep_qv[3], prep_qv[lh1 - 1]) # from Jx
     cx(prep_qv[4], prep_qv[lh1 - 1]) # from Jy
     cx(prep_qv[5], prep_qv[lh2 - 1]) # from Jz
     # 2 parallel delta gates
+    # Ref: Fig. 2(d) defines the recursive Delta_n subcircuit used to prepare
+    # the Dicke-state structure appearing in Fig. 6.
     theta_coeffs = []
     for i in range(1, L - 1):
         theta_coeffs.append(2 * np.acos(np.sqrt(1 / (i + 1))))
     _delta_gate(prep_qv[fh1:lh1], theta_coeffs)
     _delta_gate(prep_qv[fh2:lh2], theta_coeffs)
     # One spec CNOT
+    # Ref: Fig. 6 compresses the Jx/Jy branches before the controlled ladder.
     cx(prep_qv[3], prep_qv[4]) # from Jx to Jy
     # Controlled CNOT ladder
+    # Ref: Fig. 2(b) defines CL_1; Eq. (35) uses Delta plus CL_1 to build
+    # nearest-neighbor two-excitation Dicke states.
     with control(prep_qv[4]): # from Jy
         _cx_ladder(prep_qv[fh1:lh1 + 1], L)
     # One spec CNOT
     cx(prep_qv[3], prep_qv[4]) # from Jx to Jy
     # Controlled CNOT ladder
+    # Ref: Same CL_1 construction, now for the second activation register.
     with control(prep_qv[5]): # from Jz
         _cx_ladder(prep_qv[fh2:], L)
     # One spec CNOT
     cx(prep_qv[1], prep_qv[4]) # from gy to Jy
     # Controlled Element-wise CNOT
+    # Ref: Fig. 2(c) defines EC; Fig. 6 uses EC to copy the first-register
+    # Dicke pattern into the second register for Y-type terms.
     with control(prep_qv[4]): # from Jy
         cx(prep_qv[fh1:lh1 + 1], prep_qv[fh2:])
     # One spec CNOT
@@ -163,6 +190,12 @@ def foqcs_prep_spin_glass(
     conjugate: bool = False
 ) -> None:
     r"""
+
+    FOQCS-LCU state preparation, based on the application of the same name in https://arxiv.org/pdf/2507.20887.
+    Implements the FOQCS-LCU PREP oracle for the spin-glass Hamiltonian by preparing weighted selector states for non-uniform local X/Y/Z fields and distance-dependent XX/YY/ZZ couplings, then encoding them into FOQCS activation registers via unbalanced W/Dicke states, CNOT ladders, and register-copying for Y terms.
+    Specifically, this is based on the optimal implementation as provided by the authors of the paper here: https://github.com/QuantumComputingLab/foqcs-lcu/blob/main/src/foqcs_lcu/spin_glass_block_encoding.py#L254
+    See Eq. (58) for more.
+
     Parameters
     ----------
     prep_qv : QuantumVariable | Sequence[Qubit]
@@ -401,208 +434,6 @@ def get_foqcs_lcu_prep_num_of_ancillae(prep: partial, num_ops: int = 1) -> int:
         return num_ops * 5
     else:
         raise ValueError(f"Received unknown FOQCS-LCU PREP routine: {prep}")
-
-def foqcs_analyze_operator(
-        O: QubitOperator,
-        L: int = -1,
-        tol: float = _FOQCS_SPIN_GLASS_TOL,
-        raise_errors: bool = True
-) -> dict:
-    r"""
-    Parameters
-    ----------
-    O : QubitOperator
-            Qubit operator of form: O = X(0) + X(1) + 0.5 * Y(0) + 0.5 * Y(1) + 0.2 * Z(0) * Z(1)
-
-    L : int = -1
-        Number of operand qubits.
-        If not specified, will default to -1, and infer the number of operand qubits from the operator
-
-    tol : float = _FOQCS_SPIN_GLASS_TOL (1e-12)
-        Tolerance for considering the entry zero
-
-    raise_errors : bool
-        Flag determining whether to raise ValueError in the case of operator being incompatible with FOQCS-LCU.
-
-    Returns
-    ----------
-    dict {
-        "method": str ("heisenberg" || "spin_glass")
-        "L": int (number of intracting qubits)
-        "g": dict ("X": np.arr, "Z": np.arr, "Y": np.arr)
-        "J": dict ("X": np.arr, "Z": np.arr, "Y": np.arr) (In case of spin_glass, numpy arrays are 2-dim)
-    }
-
-    Raises
-    ----------
-    ValueError
-            When the operator is not compatible with FOQCS-LCU (fails the spin-glass check) and `raise_errors` is set to `True`.
-    
-    """
-    terms = O._to_pauli_coeff_dict()
-
-    # When analysis fails, it either throws a ValueError with the reason for failure,
-    # or silently returns None if raise_errors flag is set to False.
-    def fail(arg: str):
-        if raise_errors:
-            raise ValueError(arg)
-        else:
-            return None
-
-    # Verifies that operator exists and checks its length
-    max_ind = -1
-    for pauli_str in terms:
-        for ind, _ in pauli_str:
-            max_ind = max(max_ind, ind)
-    if max_ind < 0:
-        return fail(f"Received empty or constant operator: {O}")
-
-    # Infers the length or sanity checks the passed length.
-    if L == -1:
-        L = max_ind + 1
-    elif L < max_ind + 1:
-        return fail(f"Received L = {L}, while operator acts on {max_ind + 1} qubits.")
-
-    g_dict = {"X": np.zeros(L, dtype="complex"), "Y": np.zeros(L, dtype="complex"), "Z": np.zeros(L, dtype="complex")}
-    J_dict = {"X": np.zeros((L, L), dtype="complex"), "Y": np.zeros((L, L), dtype="complex"), "Z": np.zeros((L, L), dtype="complex")}
-
-    # Verify operator against the spin-glass model.
-        # Every non-zero term is Xi, Yi, Zi, XiXj, YiYj, ZiZj.
-        # Fails if:
-            # Has const cI
-            # Mixed terms: XiZj, XiYj, YiZj
-            # Three-or-more-body interaction: XiXjXk
-    for pauli_str, coeff in terms.items():
-        # All coeffs in arrays are zeroes, so just skip entry
-        if np.isclose(coeff, 0, atol=tol):
-            continue
-
-        # Fail on a constant: cI
-        if len(pauli_str) == 0:
-            return fail(f"FOQCS-LCU does not support constant/identity terms, but received {(pauli_str, coeff)}")
-
-        # Inspect one-body terms Xi, Yi, Zi:
-        if len(pauli_str) == 1:
-            (i, pauli), = pauli_str
-            g_dict[pauli][i] += coeff
-            continue
-
-        # Inspect two-body terms XiXj, YiYj, ZiZj:
-        if len(pauli_str) == 2:
-            (i, pauli_i), (j, pauli_j) = sorted(pauli_str)
-
-            if pauli_i != pauli_j:
-                return fail(f"FOQCS-LCU supports only same-axis couplings, but received: {pauli_i}({i}) * {pauli_j}({j})")
-
-            J_dict[pauli_i][i, j] += coeff
-            J_dict[pauli_i][j, i] += coeff
-            continue
-
-        if len(pauli_str) > 2:
-            return fail(f"FOQCS-LCU supports only one and two-body interactions.")
-
-    # Spin-glass has passed by this point. YAY! :D
-
-    # Verify ourselves against more specific Heisenberg-model.
-        # Spin-glass-compatible
-        # Must have form: Xi, Yi, Zi, XiXi+1, YiYi+1, ZiZi+1; local fields must be uniform.
-        # Fails if:
-            # Local field is position dependent: g_0X != g_1X, 0.5*X(0) + 0.7*X(1)
-            # Has long-range couplings: X_0*X_2
-            # Has NN couplings with different sterngths: 0.5*X(0)*X(1) + 0.9*X(1)*X(2)
-            # Zeroes matter, don't pass 0.5*X(0)*X(1) + 0*X(1)*X(2) , so depends on L.
-    is_heisenberg = True # Assume it is Heisenberg before the check
-    g_heis_dict = {}
-    J_heis_dict = {}
- 
-    # Verify that all one-body (local) coeffs are the same (uniform).
-    for pauli in {"X", "Z", "Y"}:
-        values = g_dict[pauli][:]
-
-        if not np.allclose(values, values[0], atol=tol):
-            is_heisenberg = False
-            # print("Heisenberg Rejected: non-uniform local interactions")
-            break
-
-        g_heis_dict[pauli] = values[0]
-    
-    # Verify couplings
-    if is_heisenberg:
-        for pauli in {"X", "Z", "Y"}:
-            if L == 1:
-                J_heis_dict[pauli] = 0
-                continue
-            
-            nn_val = np.array(
-                [J_dict[pauli][i, i + 1] for i in range(L - 1)],
-                dtype = complex,
-            )
-            # All same-axis nearest-neighbours interactions must be uniform
-            if not np.allclose(nn_val, nn_val[0], atol=tol):
-                is_heisenberg = False
-                # print("Heisenberg Rejected: non-uniform NN interactions")
-                break
-
-            J_heis_dict[pauli] = nn_val[0]
-
-            # Reject non-nearest-neighbour couplings
-            for i in range(L):
-                for j in range(i + 1, L):
-                    if j == i + 1:
-                        continue
-                    if not np.isclose(J_dict[pauli][i, j], 0, atol=tol):
-                        is_heisenberg = False
-                        # print("Heisenberg Rejected: not NN interactions present")
-                        break
-                if not is_heisenberg:
-                    break
-            if not is_heisenberg:
-                break
-
-    # Heisenberg check passed, build simpler structure
-    if is_heisenberg:
-        return {
-            "method": "heisenberg",
-            "L": L,
-            "g": g_heis_dict,
-            "J": J_heis_dict,
-        }
-    # General spin-glass / position-dependent XYZ spin model.
-    else:
-        return {
-            "method": "spin_glass",
-            "L": L,
-            "g": g_dict,
-            "J": J_dict,
-        }
-
-def is_operator_foqcs_compatible(
-        O: QubitOperator,
-        L: int = -1,
-        tol: float = _FOQCS_SPIN_GLASS_TOL
-) -> tuple: # tuple is of the form -> (bool, dict || None)
-    r"""
-    Parameters
-    ----------
-    O : QubitOperator
-            Qubit operator of form: O = X(0) + X(1) + 0.5 * Y(0) + 0.5 * Y(1) + 0.2 * Z(0) * Z(1)
-
-    L : int = -1
-        Number of operand qubits.
-        If not specified, will default to -1, and infer the number of operand qubits from the operator
-
-    tol : float = _FOQCS_SPIN_GLASS_TOL (1e-12)
-        Tolerance for considering the entry zero
-
-    Returns
-    ----------
-    tuple : (bool, dict || None)
-        bool : True if compatible with FOQCS-LCU
-        dict : Output of `foqcs_analyze_operator`
-
-    """
-    res = foqcs_analyze_operator(O, L = L, tol = tol, raise_errors = False)
-    return (res != None, res)
 
 def _angles_dicke_unbalanced(coeff: Sequence[float]) -> tuple[list[float], int]:
     """
